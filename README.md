@@ -134,7 +134,7 @@ cd pulse-monitor
 cp .env.example .env
 # edit .env — paste your Neon pooled connection string into DATABASE_URL
 
-go mod tidy   # first run only: resolves and locks the one dependency (pgx)
+go mod tidy   # resolves and locks dependencies; pgx is added in Phase 2
 ```
 
 **Option A — Docker, with live reload (recommended for day-to-day dev):**
