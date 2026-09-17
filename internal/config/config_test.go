@@ -5,8 +5,6 @@ import (
 	"time"
 )
 
-// clearEnv unsets every variable Load reads so each test starts from a known
-// state. t.Setenv restores the previous value when the test ends.
 func clearEnv(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{

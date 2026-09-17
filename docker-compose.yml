@@ -5,13 +5,10 @@ services:
       target: dev
     ports:
       - "8080:8080"
-    # Copy .env.example to .env before `docker compose up`.
     env_file:
       - .env
     volumes:
-      # Bind-mount the source so air sees edits and reloads.
       - .:/app
-      # Keep module/build caches out of the bind mount so rebuilds stay fast.
       - go-mod-cache:/go/pkg/mod
       - go-build-cache:/root/.cache/go-build
 

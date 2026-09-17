@@ -1,8 +1,3 @@
-// Package config loads runtime configuration from the process environment.
-//
-// Per .agents/instruction/SKILL.md §2 this is the only package permitted to read
-// environment variables directly. Everything else receives a Config value by
-// injection from cmd/server.
 package config
 
 import (
@@ -12,25 +7,15 @@ import (
 	"time"
 )
 
-// Config is the fully-resolved, validated runtime configuration. It contains no
-// globals: callers hold the value and pass it explicitly.
 type Config struct {
-	// Port is the HTTP listen port (env PORT).
-	Port int
-	// DatabaseURL is the Postgres connection string (env DATABASE_URL). Required.
-	DatabaseURL string
-	// MaxWorkers bounds how many checks run concurrently (env MAX_WORKERS).
-	MaxWorkers int
-	// CheckInterval is how often every target is re-checked (env CHECK_INTERVAL_SECONDS).
+	Port          int
+	DatabaseURL   string
+	MaxWorkers    int
 	CheckInterval time.Duration
-	// CheckTimeout is the per-check HTTP timeout (env CHECK_TIMEOUT_SECONDS).
-	CheckTimeout time.Duration
-	// DomainRPS is the maximum requests per second sent to any single domain
-	// (env DOMAIN_RPS).
-	DomainRPS int
+	CheckTimeout  time.Duration
+	DomainRPS     int
 }
 
-// Defaults applied when the corresponding environment variable is unset.
 const (
 	defaultPort          = 8080
 	defaultMaxWorkers    = 64
@@ -39,9 +24,6 @@ const (
 	defaultDomainRPS     = 5
 )
 
-// Load reads the process environment, applies defaults, and validates the
-// result. It returns an error rather than panicking so the entrypoint controls
-// startup failure — see .agents/instruction/SKILL.md §4.
 func Load() (Config, error) {
 	cfg := Config{
 		MaxWorkers:    defaultMaxWorkers,
@@ -110,7 +92,6 @@ func (c Config) validate() error {
 	return nil
 }
 
-// intEnv parses an integer environment variable, falling back to def when unset.
 func intEnv(key string, def int) (int, error) {
 	raw, ok := os.LookupEnv(key)
 	if !ok || raw == "" {
@@ -123,7 +104,6 @@ func intEnv(key string, def int) (int, error) {
 	return v, nil
 }
 
-// secondsEnv parses an integer number of seconds into a time.Duration.
 func secondsEnv(key string, def time.Duration) (time.Duration, error) {
 	raw, ok := os.LookupEnv(key)
 	if !ok || raw == "" {

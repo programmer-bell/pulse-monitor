@@ -1,12 +1,11 @@
 .env
-.env.local
 .env.*.local
-
-/bin/
+.git
+.gitignore
+.tmp
+tmp
+bin
 *.out
 *.test
 coverage.*
-
-/tmp/
-
 .DS_Store

@@ -1,6 +1,3 @@
-// Package main is the process entrypoint. Its only job is wiring: parse config,
-// build the collaborators, start the server, and shut down cleanly. See
-// .agents/instruction/SKILL.md §2.
 package main
 
 import (
@@ -45,9 +42,6 @@ func run() error {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	// The server runs in its own goroutine so main can watch for shutdown. The
-	// goroutine exits when ListenAndServe returns, which happens on either a
-	// fatal listen error or srv.Shutdown below.
 	errCh := make(chan error, 1)
 	go func() {
 		slog.Info("http server listening", "addr", srv.Addr)
@@ -77,7 +71,6 @@ func run() error {
 	return nil
 }
 
-// healthz is the liveness endpoint Render polls to decide the instance is ready.
 func healthz(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
