@@ -1,0 +1,20 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/server ./cmd/server"
+  bin = "./tmp/server"
+  include_ext = ["go", "html", "css", "js", "tpl"]
+  exclude_dir = ["tmp", "bin", ".git", ".agents"]
+  exclude_regex = ["_test.go"]
+  delay = 500
+  stop_on_error = true
+  # Poll instead of inotify: reliable across bind mounts on Docker Desktop/WSL.
+  poll = true
+  poll_interval = 500
+
+[log]
+  time = true
+
+[misc]
+  clean_on_exit = true

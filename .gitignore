@@ -1,0 +1,16 @@
+# Environment — never commit real secrets. Copy .env.example to .env.
+.env
+.env.local
+.env.*.local
+
+# Go build artifacts
+/bin/
+*.out
+*.test
+coverage.*
+
+# Air live-reload scratch dir
+/tmp/
+
+# OS / editor noise
+.DS_Store
