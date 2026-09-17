@@ -1,4 +1,4 @@
-FROM golang:1.23-bookworm AS dev
+FROM golang:1.25-bookworm AS dev
 WORKDIR /app
 COPY go.mod ./
 RUN go mod download
@@ -7,7 +7,7 @@ ENV CGO_ENABLED=0
 EXPOSE 8080
 CMD ["go", "run", "github.com/air-verse/air@v1.61.1", "-c", ".air.toml"]
 
-FROM golang:1.23-bookworm AS builder
+FROM golang:1.25-bookworm AS builder
 WORKDIR /app
 COPY go.mod ./
 RUN go mod download
