@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/programmer-bell/pulse-monitor/internal/config"
 )
 
@@ -32,6 +35,12 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	conn, err := connectDatabase(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer conn.Close(context.Background())
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
@@ -69,6 +78,30 @@ func run() error {
 	}
 	slog.Info("server stopped cleanly")
 	return nil
+}
+
+func connectDatabase(ctx context.Context, databaseURL string) (*pgx.Conn, error) {
+	connectCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	conn, err := pgx.Connect(connectCtx, databaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("connect database: %w", err)
+	}
+	if err := conn.Ping(connectCtx); err != nil {
+		conn.Close(context.Background())
+		return nil, fmt.Errorf("ping database: %w", err)
+	}
+	host, database := databaseLocation(databaseURL)
+	slog.Info("db connect successfully", "host", host, "database", database)
+	return conn, nil
+}
+
+func databaseLocation(databaseURL string) (string, string) {
+	u, err := url.Parse(databaseURL)
+	if err != nil {
+		return "", ""
+	}
+	return u.Hostname(), strings.TrimPrefix(u.Path, "/")
 }
 
 func healthz(w http.ResponseWriter, _ *http.Request) {
