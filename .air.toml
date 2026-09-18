@@ -1,3 +1,4 @@
+# Air configuration file for live-reloading during development
 root = "."
 tmp_dir = "tmp"
 
