@@ -1,0 +1,9 @@
+{{define "stats"}}
+<!-- Placeholder for stats component for Phase 4 -->
+<div id="stats-{{.TargetID}}" class="stats-panel">
+    <span>Total Checks: {{.TotalChecks}}</span>
+    <span>Failures: {{.Failures}}</span>
+    <span>P50: {{.P50Latency}}ms</span>
+    <span>P99: {{.P99Latency}}ms</span>
+</div>
+{{end}}

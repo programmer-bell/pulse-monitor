@@ -19,9 +19,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/programmer-bell/pulse-monitor/internal/config"
-	"github.com/programmer-bell/pulse-monitor/internal/store"
+	"github.com/programmer-bell/pulse-monitor/internal/handlers"
 	"github.com/programmer-bell/pulse-monitor/internal/monitor"
 	"github.com/programmer-bell/pulse-monitor/internal/ratelimit"
+	"github.com/programmer-bell/pulse-monitor/internal/store"
 	"github.com/programmer-bell/pulse-monitor/migrations"
 )
 
@@ -72,6 +73,12 @@ func run() error {
 	// Register the health check endpoint.
 	mux.HandleFunc("GET /healthz", healthz)
 
+	h, err := handlers.New(dbStore)
+	if err != nil {
+		return fmt.Errorf("init handlers: %w", err)
+	}
+	h.Register(mux)
+
 	// Configure the HTTP server with port and timeouts.
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Port),
@@ -119,19 +126,19 @@ func connectDatabase(ctx context.Context, databaseURL string) (*pgxpool.Pool, er
 	// Set a 10-second timeout for the connection attempt.
 	connectCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	
+
 	// Attempt to connect to the database.
 	pool, err := pgxpool.New(connectCtx, databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("create db pool: %w", err)
 	}
-	
+
 	// Ping the database to ensure the connection is active and valid.
 	if err := pool.Ping(connectCtx); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
-	
+
 	// Log the successful connection details.
 	host, database := databaseLocation(databaseURL)
 	slog.Info("db connect successfully", "host", host, "database", database)

@@ -60,11 +60,11 @@ still there.
 
 Goal: a person can add/remove monitored URLs and see status from a browser.
 
-- [ ] `internal/handlers`: `GET /`, `POST /targets`, `DELETE /targets/{id}`,
+- [x] `internal/handlers`: `GET /`, `POST /targets`, `DELETE /targets/{id}`,
       `GET /targets` (partial)
-- [ ] `web/templates/index.html` + `partials/target_row.html`, `partials/stats.html`
-- [ ] `web/static/css/style.css` — the vercel-style dark theme (see design notes in README)
-- [ ] Add-target form submits via htmx (`hx-post`), row deletion via `hx-delete`, no
+- [x] `web/templates/index.html` + `partials/target_row.html`, `partials/stats.html`
+- [x] `web/static/css/style.css` — the vercel-style dark theme (see design notes in README)
+- [x] Add-target form submits via htmx (`hx-post`), row deletion via `hx-delete`, no
       full page reloads
 
 **Exit criteria:** you can add a URL, watch it appear, delete it, all without JS you

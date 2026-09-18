@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Concurrent Health Monitor</title>
+    <!-- Vercel-style font (Geist/Inter) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <!-- htmx -->
+    <script src="https://unpkg.com/htmx.org@1.9.11"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Pulse Monitor</h1>
+            <p>Concurrent Health Checking Engine</p>
+        </header>
+
+        <section class="add-target">
+            <form hx-post="/targets" hx-target="#targets-tbody" hx-swap="beforeend" hx-on::after-request="if(event.detail.successful) this.reset()">
+                <input type="url" name="url" placeholder="https://example.com" required>
+                <button type="submit">Add Target</button>
+            </form>
+        </section>
+
+        <section class="targets-list">
+            <table>
+                <thead>
+                    <tr>
+                        <th>URL</th>
+                        <th>Status</th>
+                        <th>Latency</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="targets-tbody" hx-get="/targets" hx-trigger="load">
+                    <!-- Targets loaded here via htmx -->
+                </tbody>
+            </table>
+        </section>
+    </div>
+</body>
+</html>

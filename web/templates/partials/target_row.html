@@ -1,0 +1,15 @@
+{{define "target_row"}}
+<tr id="target-{{.ID}}">
+    <td class="url-cell">{{.URL}}</td>
+    <td>
+        <!-- Status placeholder, will be updated by SSE in Phase 4 -->
+        <span class="status-badge status-pending">Pending</span>
+    </td>
+    <td>-- ms</td>
+    <td>
+        <button class="delete-btn" hx-delete="/targets/{{.ID}}" hx-target="#target-{{.ID}}" hx-swap="outerHTML">
+            Delete
+        </button>
+    </td>
+</tr>
+{{end}}
