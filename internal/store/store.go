@@ -118,4 +118,3 @@ func (s *Store) RecentStats(ctx context.Context, targetID string) (Stats, error)
 	stats.P99Latency = int(p99)
 	return stats, nil
 }
-

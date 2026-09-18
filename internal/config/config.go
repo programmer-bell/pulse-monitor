@@ -148,7 +148,7 @@ func loadDotEnv(path string) error {
 		return err
 	}
 	defer f.Close()
-	
+
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -160,15 +160,15 @@ func loadDotEnv(path string) error {
 		if idx < 0 {
 			continue
 		}
-		
+
 		key := strings.TrimSpace(line[:idx])
 		val := strings.TrimSpace(line[idx+1:])
-		
+
 		// Remove surrounding quotes if present
 		if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
 			val = val[1 : len(val)-1]
 		}
-		
+
 		// Only set if not already present in the environment
 		if _, ok := os.LookupEnv(key); !ok {
 			_ = os.Setenv(key, val)

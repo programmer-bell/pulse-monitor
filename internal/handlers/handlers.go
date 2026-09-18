@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"html/template"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
 
 	"github.com/programmer-bell/pulse-monitor/internal/monitor"
+	appweb "github.com/programmer-bell/pulse-monitor/web"
 )
 
 // Store defines the data access methods required by handlers.
@@ -26,12 +28,14 @@ type Handlers struct {
 	tmpl  *template.Template
 }
 
-// New constructs a new Handlers instance and parses templates.
+// New constructs a new Handlers instance and parses templates from the
+// embedded filesystem (web/embed.go), so the prod binary is fully
+// self-contained — no runtime dependency on a web/ directory.
 func New(store Store) (*Handlers, error) {
-	tmpl, err := template.ParseFiles(
-		"web/templates/index.html",
-		"web/templates/partials/target_row.html",
-		"web/templates/partials/stats.html",
+	tmpl, err := template.ParseFS(
+		appweb.FS,
+		"templates/index.html",
+		"templates/partials/*.html",
 	)
 	if err != nil {
 		return nil, fmt.Errorf("parse templates: %w", err)
@@ -48,8 +52,19 @@ func (h *Handlers) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /targets", h.HandleListTargets)
 	mux.HandleFunc("POST /targets", h.HandleCreateTarget)
 	mux.HandleFunc("DELETE /targets/{id}", h.HandleDeleteTarget)
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
+	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 }
+
+// staticFS exposes the embedded web/static directory to the file server.
+var staticFS = func() fs.FS {
+	sub, err := fs.Sub(appweb.FS, "static")
+	if err != nil {
+		// The embed directive guarantees static exists; a missing subdir here
+		// is a programmer error, so panicking at startup is acceptable.
+		panic(fmt.Errorf("embed static subdir: %w", err))
+	}
+	return sub
+}()
 
 // HandleIndex serves the main index.html page.
 func (h *Handlers) HandleIndex(w http.ResponseWriter, r *http.Request) {

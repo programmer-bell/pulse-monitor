@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/programmer-bell/pulse-monitor/internal/monitor"
@@ -148,5 +149,45 @@ func TestHandleListTargetsReturnsServerError(t *testing.T) {
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+}
+
+// TestNewParsesEmbeddedTemplates guards the prod-deploy regression: the
+// distroless image contains only the compiled binary, so templates and static
+// assets must be resolvable from the embedded FS (web/embed.go) with no web/
+// directory present on disk. New() must succeed on a machine without the
+// source tree.
+func TestNewParsesEmbeddedTemplates(t *testing.T) {
+	h, err := New(nil)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	for _, name := range []string{"index.html", "target_row", "stats"} {
+		if h.tmpl.Lookup(name) == nil {
+			t.Fatalf("template %q not parsed from embedded FS", name)
+		}
+	}
+}
+
+// TestStaticServedFromEmbeddedFS verifies /static/* is served from the
+// embedded FS, not from disk — same regression as the template parse above.
+func TestStaticServedFromEmbeddedFS(t *testing.T) {
+	h, err := New(nil)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/static/css/style.css", nil)
+	rec := httptest.NewRecorder()
+	mux := &http.ServeMux{}
+	h.Register(mux)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if body := rec.Body.String(); !strings.Contains(body, ":root") {
+		t.Fatalf("expected embedded CSS content, got %q", body)
 	}
 }
