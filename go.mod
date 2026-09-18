@@ -1,3 +1,4 @@
+// Go module definition and dependencies for pulse-monitor
 module github.com/programmer-bell/pulse-monitor
 
 go 1.25.0

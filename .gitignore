@@ -1,3 +1,4 @@
+# Specifies intentionally untracked files to ignore in Git
 .env
 .env.local
 .env.*.local
