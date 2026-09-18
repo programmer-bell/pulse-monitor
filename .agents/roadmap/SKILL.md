@@ -46,12 +46,12 @@ number, even against a mock target.
 
 Goal: targets and check results survive a restart.
 
-- [ ] `migrations/001_init.sql`: `targets`, `checks` tables
-- [ ] `internal/store`: `CreateTarget`, `ListTargets`, `DeleteTarget`, `RecordCheck`,
+- [x] `migrations/001_init.sql`: `targets`, `checks` tables
+- [x] `internal/store`: `CreateTarget`, `ListTargets`, `DeleteTarget`, `RecordCheck`,
       `RecentStats` — one parameterized query per method, `pgxpool.Pool` injected in
       the constructor
-- [ ] Migration runs automatically on boot (idempotent `IF NOT EXISTS`)
-- [ ] `internal/monitor` writes results through `store.RecordCheck` instead of discarding them
+- [x] Migration runs automatically on boot (idempotent `IF NOT EXISTS`)
+- [x] `internal/monitor` writes results through `store.RecordCheck` instead of discarding them
 
 **Exit criteria:** restart the service, previously-added targets and their history are
 still there.

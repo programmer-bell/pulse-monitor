@@ -51,7 +51,7 @@ func TestMonitor_BoundsConcurrency(t *testing.T) {
 		targets[i] = Target{URL: srv.URL}
 	}
 
-	pool := New(nil, nil, maxWorkers, time.Second)
+	pool := New(nil, nil, nil, maxWorkers, time.Second)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -91,7 +91,7 @@ func TestMonitor_PerTargetTimeout(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	pool := New(nil, nil, 2, 20*time.Millisecond)
+	pool := New(nil, nil, nil, 2, 20*time.Millisecond)
 
 	results := pool.Check(context.Background(), []Target{{URL: srv.URL}})
 	if len(results) != 1 {
@@ -127,7 +127,7 @@ func TestMonitor_UsesRateLimiterPerDomain(t *testing.T) {
 
 	// maxWorkers == n so the semaphore never makes anything queue; any
 	// slowdown we see below is attributable to the limiter alone.
-	pool := New(nil, limiter, n, time.Second)
+	pool := New(nil, limiter, nil, n, time.Second)
 
 	start := time.Now()
 	results := pool.Check(context.Background(), targets)
@@ -152,7 +152,7 @@ func TestMonitor_UsesRateLimiterPerDomain(t *testing.T) {
 // TestMonitor_MalformedURL verifies a bad target produces an error Result
 // instead of a panic or a dropped result.
 func TestMonitor_MalformedURL(t *testing.T) {
-	pool := New(nil, nil, 2, time.Second)
+	pool := New(nil, nil, nil, 2, time.Second)
 
 	results := pool.Check(context.Background(), []Target{{URL: "://not-a-valid-url"}})
 	if len(results) != 1 {
@@ -178,7 +178,7 @@ func TestMonitor_ResultsPreserveOrder(t *testing.T) {
 		{URL: srv.URL + "/d"},
 	}
 
-	pool := New(nil, nil, 8, time.Second)
+	pool := New(nil, nil, nil, 8, time.Second)
 	results := pool.Check(context.Background(), targets)
 
 	if len(results) != len(targets) {
@@ -195,7 +195,7 @@ func TestMonitor_ResultsPreserveOrder(t *testing.T) {
 // already-canceled context don't block waiting for a worker slot — they
 // fail immediately with the context's error.
 func TestMonitor_CanceledContextFailsFast(t *testing.T) {
-	pool := New(nil, nil, 1, time.Second)
+	pool := New(nil, nil, nil, 1, time.Second)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -226,7 +226,7 @@ func BenchmarkPool_Check(b *testing.B) {
 		targets[i] = Target{URL: srv.URL}
 	}
 
-	pool := New(nil, nil, 64, time.Second)
+	pool := New(nil, nil, nil, 64, time.Second)
 	ctx := context.Background()
 
 	b.ResetTimer()

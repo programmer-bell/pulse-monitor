@@ -17,8 +17,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/programmer-bell/pulse-monitor/internal/config"
+	"github.com/programmer-bell/pulse-monitor/internal/store"
+	"github.com/programmer-bell/pulse-monitor/internal/monitor"
+	"github.com/programmer-bell/pulse-monitor/internal/ratelimit"
 )
 
 // main is the application entry point. It calls run() and handles any top-level errors.
@@ -45,13 +48,23 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Establish connection to the PostgreSQL database.
-	conn, err := connectDatabase(ctx, cfg.DatabaseURL)
+	// Establish connection pool to the PostgreSQL database.
+	pool, err := connectDatabase(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return err
 	}
-	// Ensure the database connection is closed when the application exits.
-	defer conn.Close(context.Background())
+	defer pool.Close()
+
+	if err := runMigrations(ctx, pool); err != nil {
+		return fmt.Errorf("migrations failed: %w", err)
+	}
+
+	dbStore := store.New(pool)
+	limiter := ratelimit.NewManager(cfg.DomainRPS)
+	mon := monitor.New(nil, limiter, dbStore, cfg.MaxWorkers, cfg.CheckTimeout)
+
+	// Start monitor loop
+	go mon.Run(ctx, cfg.CheckInterval)
 
 	// Initialize the HTTP request multiplexer (router).
 	mux := http.NewServeMux()
@@ -100,28 +113,38 @@ func run() error {
 	return nil
 }
 
-// connectDatabase establishes and verifies a connection to the PostgreSQL database.
-func connectDatabase(ctx context.Context, databaseURL string) (*pgx.Conn, error) {
+// connectDatabase establishes and verifies a connection pool to the PostgreSQL database.
+func connectDatabase(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	// Set a 10-second timeout for the connection attempt.
 	connectCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	
 	// Attempt to connect to the database.
-	conn, err := pgx.Connect(connectCtx, databaseURL)
+	pool, err := pgxpool.New(connectCtx, databaseURL)
 	if err != nil {
-		return nil, fmt.Errorf("connect database: %w", err)
+		return nil, fmt.Errorf("create db pool: %w", err)
 	}
 	
 	// Ping the database to ensure the connection is active and valid.
-	if err := conn.Ping(connectCtx); err != nil {
-		conn.Close(context.Background())
+	if err := pool.Ping(connectCtx); err != nil {
+		pool.Close()
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
 	
 	// Log the successful connection details.
 	host, database := databaseLocation(databaseURL)
 	slog.Info("db connect successfully", "host", host, "database", database)
-	return conn, nil
+	return pool, nil
+}
+
+// runMigrations applies the database schema if it doesn't already exist.
+func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
+	migrationSQL, err := os.ReadFile("migrations/001_init.sql")
+	if err != nil {
+		return fmt.Errorf("read migration file: %w", err)
+	}
+	_, err = pool.Exec(ctx, string(migrationSQL))
+	return err
 }
 
 // databaseLocation parses the database URL to extract the host and database name for logging.

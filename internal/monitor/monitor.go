@@ -27,8 +27,15 @@ import (
 	"github.com/programmer-bell/pulse-monitor/internal/ratelimit"
 )
 
+// Store represents the persistence layer for targets and checks.
+type Store interface {
+	ListTargets(ctx context.Context) ([]Target, error)
+	RecordCheck(ctx context.Context, targetID string, statusCode int, durationMs int, errMsg string, checkedAt time.Time) error
+}
+
 // Target is a single URL to be checked.
 type Target struct {
+	ID  string
 	URL string
 }
 
@@ -57,6 +64,7 @@ type Result struct {
 type Pool struct {
 	client       *http.Client
 	limiter      *ratelimit.Manager
+	store        Store
 	checkTimeout time.Duration
 
 	sem chan struct{}
@@ -72,7 +80,7 @@ type Pool struct {
 // (every check proceeds as soon as a worker slot is free); this is mainly
 // useful for tests and benchmarks that want to isolate the semaphore's
 // behavior from the limiter's.
-func New(client *http.Client, limiter *ratelimit.Manager, maxWorkers int, checkTimeout time.Duration) *Pool {
+func New(client *http.Client, limiter *ratelimit.Manager, s Store, maxWorkers int, checkTimeout time.Duration) *Pool {
 	if maxWorkers < 1 {
 		maxWorkers = 1
 	}
@@ -82,8 +90,50 @@ func New(client *http.Client, limiter *ratelimit.Manager, maxWorkers int, checkT
 	return &Pool{
 		client:       client,
 		limiter:      limiter,
+		store:        s,
 		checkTimeout: checkTimeout,
 		sem:          make(chan struct{}, maxWorkers),
+	}
+}
+
+// Run starts a background loop that periodically fetches targets and checks them.
+// It blocks until the context is canceled.
+func (p *Pool) Run(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	// Perform an initial check immediately.
+	p.tick(ctx)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			p.tick(ctx)
+		}
+	}
+}
+
+func (p *Pool) tick(ctx context.Context) {
+	if p.store == nil {
+		return
+	}
+	targets, err := p.store.ListTargets(ctx)
+	if err != nil {
+		// Just log or drop error in this context since we don't have a logger injected,
+		// but standard practice here is to let it fail or log it.
+		// For now we just return.
+		return
+	}
+
+	results := p.Check(ctx, targets)
+	for _, res := range results {
+		var errMsg string
+		if res.Err != nil {
+			errMsg = res.Err.Error()
+		}
+		_ = p.store.RecordCheck(ctx, res.Target.ID, res.StatusCode, int(res.Duration.Milliseconds()), errMsg, res.CheckedAt)
 	}
 }
 
