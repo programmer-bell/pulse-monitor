@@ -9,13 +9,17 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css">
-    <!-- htmx -->
+    <!-- htmx + SSE extension -->
     <script src="https://unpkg.com/htmx.org@1.9.11"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.11/dist/ext/sse.js"></script>
 </head>
-<body>
+<body hx-ext="sse" sse-connect="/events">
     <div class="container">
         <header>
-            <h1>Pulse Monitor</h1>
+            <div class="header-row">
+                <h1>Pulse Monitor</h1>
+                <span id="live-indicator" class="live-indicator"><span class="live-dot"></span><span class="live-label">Connecting</span></span>
+            </div>
             <p>Concurrent Health Checking Engine</p>
         </header>
 
@@ -30,17 +34,25 @@
             <table>
                 <thead>
                     <tr>
-                        <th>URL</th>
                         <th>Status</th>
+                        <th>URL</th>
                         <th>Latency</th>
-                        <th>Actions</th>
+                        <th>Stats</th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody id="targets-tbody" hx-get="/targets" hx-trigger="load">
                     <!-- Targets loaded here via htmx -->
                 </tbody>
             </table>
+            <div id="empty-row" class="empty-row" hidden>No targets yet — add one above.</div>
         </section>
     </div>
+
+    <!-- Receives the live "check"/"stats" events; out-of-band fragments
+         inside the event data are relocated to the target rows by htmx. -->
+    <div id="sse-sink" hidden sse-swap="check stats"></div>
+
+    <script src="/static/js/app.js"></script>
 </body>
 </html>

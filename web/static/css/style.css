@@ -130,3 +130,90 @@ td.url-cell {
     background-color: rgba(238, 0, 0, 0.1);
     color: var(--danger-color);
 }
+
+.header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.live-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    padding: 0.25rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+}
+
+.live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--text-secondary);
+}
+
+.live-indicator.is-live .live-dot {
+    background-color: var(--success-color);
+}
+
+.live-indicator.is-live .live-label {
+    color: var(--text-primary);
+}
+
+.live-indicator.is-error .live-dot {
+    background-color: var(--danger-color);
+}
+
+.status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: currentColor;
+    margin-right: 0.375rem;
+    vertical-align: baseline;
+}
+
+.status-pending .status-dot {
+    background-color: var(--text-secondary);
+}
+
+.stats-cell {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.mini-stat {
+    display: inline-flex;
+    flex-direction: column;
+    margin-right: 1rem;
+}
+
+.mini-stat:last-child {
+    margin-right: 0;
+}
+
+.mini-stat-label {
+    font-size: 0.625rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.mini-stat-value {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.empty-row {
+    padding: 1.5rem 1rem;
+    color: var(--text-secondary);
+    text-align: center;
+    font-size: 0.875rem;
+}

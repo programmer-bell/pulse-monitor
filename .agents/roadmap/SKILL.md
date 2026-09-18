@@ -74,11 +74,11 @@ wrote by hand beyond what htmx attributes need.
 
 Goal: the dashboard updates itself as checks complete, no polling.
 
-- [ ] `internal/sse`: broadcast hub, `Subscribe()`/`Publish()`, mutex-protected
+- [x] `internal/sse`: broadcast hub, `Subscribe()`/`Publish()`, mutex-protected
       client set
-- [ ] `GET /events` SSE endpoint, monitor engine publishes a result event per check and
+- [x] `GET /events` SSE endpoint, monitor engine publishes a result event per check and
       a stats event per tick
-- [ ] htmx SSE extension on the page wires row/stat updates to incoming events;
+- [x] htmx SSE extension on the page wires row/stat updates to incoming events;
       `web/static/js/app.js` only handles the small bits htmx attributes can't
 
 **Exit criteria:** open the dashboard in two tabs, add a target in one, watch it and
