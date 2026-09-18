@@ -1,17 +1,30 @@
+# Docker Compose configuration for local development.
 services:
   app:
+    # Build the image using the 'dev' stage of the Dockerfile
+    # which includes the 'air' live-reload tool.
     build:
       context: .
       target: dev
+    
+    # Map port 8080 on the host to port 8080 in the container
     ports:
       - "8080:8080"
+    
+    # Load environment variables from the .env file
     env_file:
       - .env
+    
+    # Mount volumes to enable live reloading and persistent caching
     volumes:
+      # Mount current directory to /app for source code sync (live reload)
       - .:/app
+      # Cache Go modules to speed up subsequent builds and startups
       - go-mod-cache:/go/pkg/mod
+      # Cache Go build artifacts for faster compilation
       - go-build-cache:/root/.cache/go-build
 
+# Define named volumes for persistent caching across container restarts
 volumes:
   go-mod-cache:
   go-build-cache:

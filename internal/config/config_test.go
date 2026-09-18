@@ -1,10 +1,16 @@
 package config
 
+// This file contains unit tests for the configuration loading logic,
+// ensuring that default values, overrides from environment variables,
+// and validation errors are handled correctly.
+
 import (
 	"testing"
 	"time"
 )
 
+// clearEnv is a helper function to unset environment variables before each test
+// to ensure a clean slate and prevent test interdependence.
 func clearEnv(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{
@@ -19,8 +25,11 @@ func clearEnv(t *testing.T) {
 	}
 }
 
+// TestLoad_Defaults verifies that the Load function correctly applies
+// default values when environment variables are not set.
 func TestLoad_Defaults(t *testing.T) {
 	clearEnv(t)
+	// Database URL is required, so we must set it even for testing defaults.
 	t.Setenv("DATABASE_URL", "postgres://user:pass@host/db")
 
 	cfg, err := Load()
@@ -28,6 +37,7 @@ func TestLoad_Defaults(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
+	// Check if all fields match their expected default values.
 	if cfg.Port != defaultPort {
 		t.Errorf("Port = %d, want %d", cfg.Port, defaultPort)
 	}
@@ -45,8 +55,11 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 }
 
+// TestLoad_Overrides ensures that explicitly set environment variables
+// correctly override the default configuration values.
 func TestLoad_Overrides(t *testing.T) {
 	clearEnv(t)
+	// Set custom values for all configurable parameters.
 	t.Setenv("PORT", "9090")
 	t.Setenv("DATABASE_URL", "postgres://user:pass@host/db")
 	t.Setenv("MAX_WORKERS", "8")
@@ -59,6 +72,7 @@ func TestLoad_Overrides(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
+	// Verify that the loaded config reflects the custom values.
 	if cfg.Port != 9090 {
 		t.Errorf("Port = %d, want 9090", cfg.Port)
 	}
@@ -76,7 +90,10 @@ func TestLoad_Overrides(t *testing.T) {
 	}
 }
 
+// TestLoad_Errors tests various invalid configuration states to verify
+// that the validation logic catches them and returns appropriate errors.
 func TestLoad_Errors(t *testing.T) {
+	// Define a suite of test cases covering different invalid configurations.
 	tests := []struct {
 		name    string
 		env     map[string]string
@@ -84,7 +101,7 @@ func TestLoad_Errors(t *testing.T) {
 	}{
 		{
 			name:    "missing database url",
-			env:     map[string]string{},
+			env:     map[string]string{}, // Empty env means no DATABASE_URL
 			wantErr: true,
 		},
 		{
@@ -124,18 +141,21 @@ func TestLoad_Errors(t *testing.T) {
 		},
 		{
 			name:    "valid minimal config",
-			env:     map[string]string{"DATABASE_URL": "postgres://x"},
+			env:     map[string]string{"DATABASE_URL": "postgres://x"}, // Only required field provided
 			wantErr: false,
 		},
 	}
 
+	// Run each test case in a sub-test.
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			clearEnv(t)
+			// Apply the environment variables for this specific test case.
 			for k, v := range tt.env {
 				t.Setenv(k, v)
 			}
 
+			// Attempt to load the configuration and check if the error matches expectation.
 			_, err := Load()
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("Load() error = %v, wantErr = %v", err, tt.wantErr)
