@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: pulse-monitor
+    runtime: docker
+    plan: free
+    dockerfilePath: Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    envVars:
+      - key: PORT
+        value: "8080"
+      - key: DATABASE_URL
+        sync: false
+      - key: MAX_WORKERS
+        value: "64"
+      - key: CHECK_INTERVAL_SECONDS
+        value: "30"
+      - key: CHECK_TIMEOUT_SECONDS
+        value: "10"
+      - key: DOMAIN_RPS
+        value: "5"
