@@ -22,6 +22,7 @@ import (
 	"github.com/programmer-bell/pulse-monitor/internal/store"
 	"github.com/programmer-bell/pulse-monitor/internal/monitor"
 	"github.com/programmer-bell/pulse-monitor/internal/ratelimit"
+	"github.com/programmer-bell/pulse-monitor/migrations"
 )
 
 // main is the application entry point. It calls run() and handles any top-level errors.
@@ -139,11 +140,7 @@ func connectDatabase(ctx context.Context, databaseURL string) (*pgxpool.Pool, er
 
 // runMigrations applies the database schema if it doesn't already exist.
 func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
-	migrationSQL, err := os.ReadFile("migrations/001_init.sql")
-	if err != nil {
-		return fmt.Errorf("read migration file: %w", err)
-	}
-	_, err = pool.Exec(ctx, string(migrationSQL))
+	_, err := pool.Exec(ctx, migrations.InitSQL)
 	return err
 }
 
