@@ -8,11 +8,12 @@
 //     slow or high-volume host can't starve every other host's share of the
 //     worker pool.
 //
-// Persistence and pub/sub (Store, Publisher) are deliberately not part of
-// this package yet — see .agents/roadmap/SKILL.md Phase 1 — Pool.Check
-// simply returns the results it collected and lets the caller decide what
-// to do with them. That keeps this package testable with nothing but an
-// httptest.Server, no real network or database involved.
+// Persistence and pub/sub are injected, not owned: Store records results,
+// and Publisher broadcasts a rendered event per check and per tick so the
+// dashboard updates in real time over Server-Sent Events (Phase 4). Both are
+// satisfied structurally by *store.Store and *handlers.Handlers, which keeps
+// this package testable with nothing but an httptest.Server, no real
+// network or database involved.
 package monitor
 
 import (
@@ -31,6 +32,27 @@ import (
 type Store interface {
 	ListTargets(ctx context.Context) ([]Target, error)
 	RecordCheck(ctx context.Context, targetID string, statusCode int, durationMs int, errMsg string, checkedAt time.Time) error
+	RecentStats(ctx context.Context, targetID string) (Stats, error)
+}
+
+// Stats are the per-target aggregates published once per tick. Owned here so
+// the engine (not the store package) defines the Publisher contract;
+// store.RecentStats returns this type.
+type Stats struct {
+	TargetID     string
+	TotalChecks  int
+	Failures     int
+	P50LatencyMS int
+	P99LatencyMS int
+}
+
+// Publisher receives a rendered event for each completed check and a stats
+// event once per tick. It is declared at the point of use and satisfied
+// structurally by *handlers.Handlers, which renders the events as
+// out-of-band HTML fragments and broadcasts them over the SSE hub.
+type Publisher interface {
+	PublishCheck(result Result)
+	PublishStats(targetID string, totalChecks, failures, p50MS, p99MS int)
 }
 
 // Target is a single URL to be checked.
@@ -65,6 +87,7 @@ type Pool struct {
 	client       *http.Client
 	limiter      *ratelimit.Manager
 	store        Store
+	publisher    Publisher
 	checkTimeout time.Duration
 
 	sem chan struct{}
@@ -80,7 +103,11 @@ type Pool struct {
 // (every check proceeds as soon as a worker slot is free); this is mainly
 // useful for tests and benchmarks that want to isolate the semaphore's
 // behavior from the limiter's.
-func New(client *http.Client, limiter *ratelimit.Manager, s Store, maxWorkers int, checkTimeout time.Duration) *Pool {
+//
+// publisher may be nil to disable live events (used by tests that only
+// exercise Check directly); when set, the tick loop publishes a result event
+// per completed check and a stats event per target per tick.
+func New(client *http.Client, limiter *ratelimit.Manager, s Store, maxWorkers int, checkTimeout time.Duration, pub Publisher) *Pool {
 	if maxWorkers < 1 {
 		maxWorkers = 1
 	}
@@ -91,6 +118,7 @@ func New(client *http.Client, limiter *ratelimit.Manager, s Store, maxWorkers in
 		client:       client,
 		limiter:      limiter,
 		store:        s,
+		publisher:    pub,
 		checkTimeout: checkTimeout,
 		sem:          make(chan struct{}, maxWorkers),
 	}
@@ -129,11 +157,28 @@ func (p *Pool) tick(ctx context.Context) {
 
 	results := p.Check(ctx, targets)
 	for _, res := range results {
+		// Live event first so the dashboard reflects the check as it
+		// happens; the recorded history below is what makes it durable.
+		if p.publisher != nil {
+			p.publisher.PublishCheck(res)
+		}
 		var errMsg string
 		if res.Err != nil {
 			errMsg = res.Err.Error()
 		}
 		_ = p.store.RecordCheck(ctx, res.Target.ID, res.StatusCode, int(res.Duration.Milliseconds()), errMsg, res.CheckedAt)
+	}
+
+	// Once the tick's checks are recorded, publish per-target aggregates so
+	// the dashboard's stats update once per tick rather than once per check.
+	if p.publisher != nil {
+		for _, target := range targets {
+			stats, err := p.store.RecentStats(ctx, target.ID)
+			if err != nil {
+				continue
+			}
+			p.publisher.PublishStats(stats.TargetID, stats.TotalChecks, stats.Failures, stats.P50LatencyMS, stats.P99LatencyMS)
+		}
 	}
 }
 

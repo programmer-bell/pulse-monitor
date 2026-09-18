@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -51,7 +52,7 @@ func TestMonitor_BoundsConcurrency(t *testing.T) {
 		targets[i] = Target{URL: srv.URL}
 	}
 
-	pool := New(nil, nil, nil, maxWorkers, time.Second)
+	pool := New(nil, nil, nil, maxWorkers, time.Second, nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -91,7 +92,7 @@ func TestMonitor_PerTargetTimeout(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	pool := New(nil, nil, nil, 2, 20*time.Millisecond)
+	pool := New(nil, nil, nil, 2, 20*time.Millisecond, nil)
 
 	results := pool.Check(context.Background(), []Target{{URL: srv.URL}})
 	if len(results) != 1 {
@@ -127,7 +128,7 @@ func TestMonitor_UsesRateLimiterPerDomain(t *testing.T) {
 
 	// maxWorkers == n so the semaphore never makes anything queue; any
 	// slowdown we see below is attributable to the limiter alone.
-	pool := New(nil, limiter, nil, n, time.Second)
+	pool := New(nil, limiter, nil, n, time.Second, nil)
 
 	start := time.Now()
 	results := pool.Check(context.Background(), targets)
@@ -152,7 +153,7 @@ func TestMonitor_UsesRateLimiterPerDomain(t *testing.T) {
 // TestMonitor_MalformedURL verifies a bad target produces an error Result
 // instead of a panic or a dropped result.
 func TestMonitor_MalformedURL(t *testing.T) {
-	pool := New(nil, nil, nil, 2, time.Second)
+	pool := New(nil, nil, nil, 2, time.Second, nil)
 
 	results := pool.Check(context.Background(), []Target{{URL: "://not-a-valid-url"}})
 	if len(results) != 1 {
@@ -178,7 +179,7 @@ func TestMonitor_ResultsPreserveOrder(t *testing.T) {
 		{URL: srv.URL + "/d"},
 	}
 
-	pool := New(nil, nil, nil, 8, time.Second)
+	pool := New(nil, nil, nil, 8, time.Second, nil)
 	results := pool.Check(context.Background(), targets)
 
 	if len(results) != len(targets) {
@@ -195,7 +196,7 @@ func TestMonitor_ResultsPreserveOrder(t *testing.T) {
 // already-canceled context don't block waiting for a worker slot — they
 // fail immediately with the context's error.
 func TestMonitor_CanceledContextFailsFast(t *testing.T) {
-	pool := New(nil, nil, nil, 1, time.Second)
+	pool := New(nil, nil, nil, 1, time.Second, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -205,6 +206,105 @@ func TestMonitor_CanceledContextFailsFast(t *testing.T) {
 		if r.Err == nil {
 			t.Fatalf("results[%d]: expected an error for an already-canceled context, got nil", i)
 		}
+	}
+}
+
+// fakeStore implements Store for the publisher test: it hands back a fixed
+// target set and returns canned stats.
+type fakeStore struct {
+	targets []Target
+	stats   Stats
+	checks  int
+}
+
+func (s *fakeStore) ListTargets(context.Context) ([]Target, error) { return s.targets, nil }
+func (s *fakeStore) RecordCheck(context.Context, string, int, int, string, time.Time) error {
+	s.checks++
+	return nil
+}
+func (s *fakeStore) RecentStats(_ context.Context, targetID string) (Stats, error) {
+	stats := s.stats
+	stats.TargetID = targetID
+	return stats, nil
+}
+
+// fakePublisher implements Publisher, recording every published event so the
+// test can assert on what the engine actually broadcasts.
+type fakePublisher struct {
+	mu     sync.Mutex
+	checks []Result
+	stats  []Stats
+}
+
+func (p *fakePublisher) PublishCheck(r Result) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.checks = append(p.checks, r)
+}
+
+func (p *fakePublisher) PublishStats(targetID string, totalChecks, failures, p50MS, p99MS int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.stats = append(p.stats, Stats{
+		TargetID:     targetID,
+		TotalChecks:  totalChecks,
+		Failures:     failures,
+		P50LatencyMS: p50MS,
+		P99LatencyMS: p99MS,
+	})
+}
+
+// TestMonitor_TickPublishesCheckAndStats verifies Phase 4's contract: one
+// result event per completed check and one stats event per target per tick,
+// in the order the engine produces them.
+func TestMonitor_TickPublishesCheckAndStats(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	// A closed server makes the second check fail at the transport layer,
+	// producing a Result with a non-nil Err (HTTP status codes don't make
+	// checkOne return an error — up/down classification is the renderer's job).
+	deadSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	deadURL := deadSrv.URL
+	deadSrv.Close()
+
+	good := Target{ID: "t-1", URL: srv.URL}
+	bad := Target{ID: "t-2", URL: deadURL}
+
+	store := &fakeStore{targets: []Target{good, bad}}
+	store.stats = Stats{TotalChecks: 7, Failures: 1, P50LatencyMS: 120, P99LatencyMS: 900}
+	pub := &fakePublisher{}
+
+	pool := New(nil, nil, store, 4, time.Second, pub)
+	pool.tick(context.Background())
+
+	pub.mu.Lock()
+	defer pub.mu.Unlock()
+
+	if len(pub.checks) != 2 {
+		t.Fatalf("published %d check events, want 2 (one per target)", len(pub.checks))
+	}
+	if got := pub.checks[0].Target.ID; got != "t-1" {
+		t.Fatalf("first check event target = %q, want t-1", got)
+	}
+	if pub.checks[0].StatusCode != http.StatusOK {
+		t.Fatalf("first check status = %d, want 200", pub.checks[0].StatusCode)
+	}
+	if pub.checks[1].Err == nil {
+		t.Fatal("second check should carry an error result for a 503 response")
+	}
+
+	if len(pub.stats) != 2 {
+		t.Fatalf("published %d stats events, want 2 (one per target per tick)", len(pub.stats))
+	}
+	want := Stats{TargetID: "t-1", TotalChecks: 7, Failures: 1, P50LatencyMS: 120, P99LatencyMS: 900}
+	if got := pub.stats[0]; got != want {
+		t.Fatalf("stats[0] = %+v, want %+v", got, want)
+	}
+	if store.checks != 2 {
+		t.Fatalf("recorded %d checks, want 2", store.checks)
 	}
 }
 
@@ -226,7 +326,7 @@ func BenchmarkPool_Check(b *testing.B) {
 		targets[i] = Target{URL: srv.URL}
 	}
 
-	pool := New(nil, nil, nil, 64, time.Second)
+	pool := New(nil, nil, nil, 64, time.Second, nil)
 	ctx := context.Background()
 
 	b.ResetTimer()

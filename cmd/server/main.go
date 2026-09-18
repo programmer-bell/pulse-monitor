@@ -22,6 +22,7 @@ import (
 	"github.com/programmer-bell/pulse-monitor/internal/handlers"
 	"github.com/programmer-bell/pulse-monitor/internal/monitor"
 	"github.com/programmer-bell/pulse-monitor/internal/ratelimit"
+	"github.com/programmer-bell/pulse-monitor/internal/sse"
 	"github.com/programmer-bell/pulse-monitor/internal/store"
 	"github.com/programmer-bell/pulse-monitor/migrations"
 )
@@ -63,7 +64,16 @@ func run() error {
 
 	dbStore := store.New(pool)
 	limiter := ratelimit.NewManager(cfg.DomainRPS)
-	mon := monitor.New(nil, limiter, dbStore, cfg.MaxWorkers, cfg.CheckTimeout)
+	hub := sse.New()
+
+	// Handlers double as the monitor's Publisher (rendering SSE events to
+	// out-of-band HTML), so they must exist before the engine starts ticking.
+	h, err := handlers.New(dbStore, hub)
+	if err != nil {
+		return fmt.Errorf("init handlers: %w", err)
+	}
+
+	mon := monitor.New(nil, limiter, dbStore, cfg.MaxWorkers, cfg.CheckTimeout, h)
 
 	// Start monitor loop
 	go mon.Run(ctx, cfg.CheckInterval)
@@ -73,10 +83,6 @@ func run() error {
 	// Register the health check endpoint.
 	mux.HandleFunc("GET /healthz", healthz)
 
-	h, err := handlers.New(dbStore)
-	if err != nil {
-		return fmt.Errorf("init handlers: %w", err)
-	}
 	h.Register(mux)
 
 	// Configure the HTTP server with port and timeouts.

@@ -12,15 +12,6 @@ import (
 // Target represents a monitored URL.
 type Target = monitor.Target
 
-// Stats represents recent checking statistics for a target.
-type Stats struct {
-	TargetID    string `json:"target_id"`
-	TotalChecks int    `json:"total_checks"`
-	Failures    int    `json:"failures"`
-	P50Latency  int    `json:"p50_latency"`
-	P99Latency  int    `json:"p99_latency"`
-}
-
 // Store wraps a Postgres connection pool.
 type Store struct {
 	pool *pgxpool.Pool
@@ -92,8 +83,10 @@ func (s *Store) RecordCheck(ctx context.Context, targetID string, statusCode int
 	return nil
 }
 
-// RecentStats calculates aggregate statistics for a given target.
-func (s *Store) RecentStats(ctx context.Context, targetID string) (Stats, error) {
+// RecentStats calculates aggregate statistics for a given target. Returns the
+// monitor.Stats view type so *Store satisfies monitor.Store (the monitor
+// engine consumes these aggregates and publishes them to the dashboard).
+func (s *Store) RecentStats(ctx context.Context, targetID string) (monitor.Stats, error) {
 	query := `
 		SELECT 
 			COUNT(*),
@@ -103,7 +96,7 @@ func (s *Store) RecentStats(ctx context.Context, targetID string) (Stats, error)
 		FROM checks 
 		WHERE target_id = $1
 	`
-	stats := Stats{TargetID: targetID}
+	stats := monitor.Stats{TargetID: targetID}
 	var p50, p99 float64
 	err := s.pool.QueryRow(ctx, query, targetID).Scan(
 		&stats.TotalChecks,
@@ -112,9 +105,9 @@ func (s *Store) RecentStats(ctx context.Context, targetID string) (Stats, error)
 		&p99,
 	)
 	if err != nil {
-		return Stats{}, fmt.Errorf("recent stats: %w", err)
+		return monitor.Stats{}, fmt.Errorf("recent stats: %w", err)
 	}
-	stats.P50Latency = int(p50)
-	stats.P99Latency = int(p99)
+	stats.P50LatencyMS = int(p50)
+	stats.P99LatencyMS = int(p99)
 	return stats, nil
 }

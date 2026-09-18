@@ -1,9 +1,8 @@
 {{define "stats"}}
-<!-- Placeholder for stats component for Phase 4 -->
-<div id="stats-{{.TargetID}}" class="stats-panel">
-    <span>Total Checks: {{.TotalChecks}}</span>
-    <span>Failures: {{.Failures}}</span>
-    <span>P50: {{.P50Latency}}ms</span>
-    <span>P99: {{.P99Latency}}ms</span>
-</div>
+<span id="stats-{{.ID}}" hx-swap-oob="true">
+    <span class="mini-stat"><span class="mini-stat-label">checks</span><span class="mini-stat-value">{{.Total}}</span></span>
+    <span class="mini-stat"><span class="mini-stat-label">failures</span><span class="mini-stat-value">{{.Failures}}</span></span>
+    <span class="mini-stat"><span class="mini-stat-label">p50</span><span class="mini-stat-value">{{.P50MS}} ms</span></span>
+    <span class="mini-stat"><span class="mini-stat-label">p99</span><span class="mini-stat-value">{{.P99MS}} ms</span></span>
+</span>
 {{end}}

@@ -1,15 +1,18 @@
 {{define "target_row"}}
 <tr id="target-{{.ID}}">
-    <td class="url-cell">{{.URL}}</td>
-    <td>
-        <!-- Status placeholder, will be updated by SSE in Phase 4 -->
-        <span class="status-badge status-pending">Pending</span>
+    <td id="status-{{.ID}}" class="status-cell">
+        <span class="status-badge status-pending"><span class="status-dot"></span>Pending</span>
     </td>
-    <td>-- ms</td>
-    <td>
-        <button class="delete-btn" hx-delete="/targets/{{.ID}}" hx-target="#target-{{.ID}}" hx-swap="outerHTML">
-            Delete
-        </button>
+    <td class="url-cell" title="{{.URL}}">{{.URL}}</td>
+    <td class="latency-cell"><span id="latency-{{.ID}}">—</span></td>
+    <td class="stats-cell"><span id="stats-{{.ID}}">
+        <span class="mini-stat"><span class="mini-stat-label">checks</span><span class="mini-stat-value">0</span></span>
+        <span class="mini-stat"><span class="mini-stat-label">failures</span><span class="mini-stat-value">0</span></span>
+        <span class="mini-stat"><span class="mini-stat-label">p50</span><span class="mini-stat-value">—</span></span>
+        <span class="mini-stat"><span class="mini-stat-label">p99</span><span class="mini-stat-value">—</span></span>
+    </span></td>
+    <td class="actions-cell">
+        <button class="delete-btn" hx-delete="/targets/{{.ID}}" hx-target="#target-{{.ID}}" hx-swap="outerHTML">Delete</button>
     </td>
 </tr>
 {{end}}

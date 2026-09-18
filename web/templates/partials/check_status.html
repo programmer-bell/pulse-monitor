@@ -1,0 +1,6 @@
+{{define "check_status"}}
+<td id="status-{{.ID}}" hx-swap-oob="true" class="status-cell">
+    <span class="status-badge status-{{.Status}}"{{if .Error}} title="{{.Error}}"{{end}}><span class="status-dot"></span>{{.Label}}</span>
+</td>
+<td id="latency-{{.ID}}" hx-swap-oob="true" class="latency-cell">{{.Latency}}</td>
+{{end}}
