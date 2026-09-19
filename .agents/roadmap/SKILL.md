@@ -13,15 +13,15 @@ aren't checked off.
 
 Goal: an empty-but-real Go service that boots, is dockerized, and is provisioned.
 
-- [ ] `go.mod`, base package layout per the instruction file
-- [ ] `internal/config`: load `PORT`, `DATABASE_URL`, `MAX_WORKERS`, `CHECK_INTERVAL_SECONDS`
+- [x] `go.mod`, base package layout per the instruction file
+- [x] `internal/config`: load `PORT`, `DATABASE_URL`, `MAX_WORKERS`, `CHECK_INTERVAL_SECONDS`
       from env with sane defaults
-- [ ] `GET /healthz` returning 200 — this is what Render's health check will hit
-- [ ] Dockerfile with `dev` (air, live-reload) and `prod` (distroless, compiled binary)
+- [x] `GET /healthz` returning 200 — this is what Render's health check will hit
+- [x] Dockerfile with `dev` (air, live-reload) and `prod` (distroless, compiled binary)
       stages; `docker-compose.yml` for local dev
-- [ ] Provision a free Neon Postgres project and branch; confirm `psql`/`pgx` can reach
+- [x] Provision a free Neon Postgres project and branch; confirm `psql`/`pgx` can reach
       it from your machine
-- [ ] `.env.example` committed, real `.env` gitignored
+- [x] `.env.example` committed, real `.env` gitignored
 
 **Exit criteria:** `docker compose up` serves `/healthz` with live reload on file save.
 
@@ -30,12 +30,12 @@ Goal: an empty-but-real Go service that boots, is dockerized, and is provisioned
 Goal: the worker pool and rate limiter — the actual showcase piece — proven correct in
 isolation, with no HTTP or DB involved yet.
 
-- [ ] `internal/ratelimit`: hand-rolled per-key token bucket (channel + ticker refill)
-- [ ] `internal/monitor`: bounded worker pool (semaphore channel) that takes a list of
+- [x] `internal/ratelimit`: hand-rolled per-key token bucket (channel + ticker refill)
+- [x] `internal/monitor`: bounded worker pool (semaphore channel) that takes a list of
       URLs and an `http.Client` and checks them concurrently with per-target timeout
-- [ ] Unit tests for both, run under `-race`, including a test that floods the limiter
+- [x] Unit tests for both, run under `-race`, including a test that floods the limiter
       from many goroutines and asserts the rate is actually respected
-- [ ] A throwaway `cmd/loadtest` (or a `go test -bench`) that checks a few thousand
+- [x] A throwaway `cmd/loadtest` (or a `go test -bench`) that checks a few thousand
       dummy targets and reports checks/sec — first draft of the number that goes in
       the README
 
@@ -114,13 +114,10 @@ section has real, reproducible numbers with the command used to get them.
 
 Goal: it's live, documented, and postable.
 
-- [ ] Prod image builds and runs on Render free tier, pointed at the Neon `DATABASE_URL`
-- [ ] `render.yaml` blueprint checked in
-- [ ] README finished: architecture diagram (ASCII is fine), setup, deploy steps,
+- [x] Prod image builds and runs on Render free tier, pointed at the Neon `DATABASE_URL`
+- [x] `render.yaml` blueprint checked in
+- [x] README finished: architecture diagram (ASCII is fine), setup, deploy steps,
       performance numbers, design trade-offs section
-- [ ] Record a short GIF/screen capture of the live dashboard for the README and the
-      LinkedIn post
-- [ ] Publish the LinkedIn post
 
 **Exit criteria:** a stranger can `git clone`, read the README, and have it running
 locally in under 10 minutes — and the deployed link works.
