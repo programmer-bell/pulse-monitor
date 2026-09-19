@@ -271,14 +271,19 @@ func (p *Pool) checkOne(ctx context.Context, target Target) Result {
 		return Result{Target: target, Err: fmt.Errorf("monitor: parse target url: %w", err), CheckedAt: now}
 	}
 
+	// One checkTimeout budget covers both the rate-limit wait and the HTTP
+	// call. ctx is context.Background during a tick, so without a deadline
+	// here a burst of same-domain targets could sit in limiter.Wait for far
+	// longer than the configured timeout — the "no unbounded blocking calls"
+	// rule applies to a limiter wait just as it does to a request.
+	checkCtx, cancel := context.WithTimeout(ctx, p.checkTimeout)
+	defer cancel()
+
 	if p.limiter != nil {
-		if err := p.limiter.Wait(ctx, domain); err != nil {
+		if err := p.limiter.Wait(checkCtx, domain); err != nil {
 			return Result{Target: target, Err: fmt.Errorf("monitor: rate limit wait: %w", err), CheckedAt: now}
 		}
 	}
-
-	checkCtx, cancel := context.WithTimeout(ctx, p.checkTimeout)
-	defer cancel()
 
 	req, err := http.NewRequestWithContext(checkCtx, http.MethodGet, target.URL, nil)
 	if err != nil {
