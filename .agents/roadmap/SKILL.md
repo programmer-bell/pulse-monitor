@@ -88,11 +88,11 @@ its status appear live in both without a manual refresh.
 
 Goal: it behaves like a service someone else could operate.
 
-- [ ] `log/slog` structured logs on startup, shutdown, and every check failure
-- [ ] `GET /metrics` — plain-text counters (checks total, in-flight, failures, uptime)
-- [ ] Graceful shutdown: `signal.NotifyContext`, in-flight checks allowed to finish,
+- [x] `log/slog` structured logs on startup, shutdown, and every check failure
+- [x] `GET /metrics` — plain-text counters (checks total, in-flight, failures, uptime)
+- [x] Graceful shutdown: `signal.NotifyContext`, in-flight checks allowed to finish,
       `http.Server.Shutdown` with timeout
-- [ ] Panic-recovery middleware on the HTTP server so one bad handler can't take down
+- [x] Panic-recovery middleware on the HTTP server so one bad handler can't take down
       the process
 
 **Exit criteria:** `docker compose kill -s SIGTERM app` shows a clean shutdown log, no

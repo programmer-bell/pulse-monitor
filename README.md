@@ -145,10 +145,12 @@ docker compose up --build
 
 This builds the Dockerfile's `dev` stage, which runs the app under
 [`air`](https://github.com/air-verse/air) via `go run` — air is never
-installed anywhere; `go run github.com/air-verse/air@v1.61.1` fetches it into
-the module cache on first use and it's just a dev-loop tool from then on.
-Edit a `.go`, `.html`, `.css`, or `.js` file and the server rebuilds and
-restarts automatically.
+installed on your machine, only fetched into the dev image at build time
+(`go install github.com/air-verse/air@v1.61.1`), and never shipped to the
+`prod` image. Air runs the compiled binary as a child and restarts it on file
+change: edit a `.go`, `.html`, `.css`, or `.js` file and the server rebuilds
+and restarts automatically. The dev image runs air as PID 1 so a
+`docker compose kill -s SIGTERM app` reaches the server and drains cleanly.
 
 **Option B — no Docker:**
 
