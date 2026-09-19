@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"sync"
@@ -35,9 +36,7 @@ type Store interface {
 	RecentStats(ctx context.Context, targetID string) (Stats, error)
 }
 
-// Stats are the per-target aggregates published once per tick. Owned here so
-// the engine (not the store package) defines the Publisher contract;
-// store.RecentStats returns this type.
+// Stats are the per-target aggregates published once per tick.
 type Stats struct {
 	TargetID     string
 	TotalChecks  int
@@ -47,12 +46,20 @@ type Stats struct {
 }
 
 // Publisher receives a rendered event for each completed check and a stats
-// event once per tick. It is declared at the point of use and satisfied
-// structurally by *handlers.Handlers, which renders the events as
-// out-of-band HTML fragments and broadcasts them over the SSE hub.
+// event once per tick. Satisfied structurally by *handlers.Handlers.
 type Publisher interface {
 	PublishCheck(result Result)
 	PublishStats(targetID string, totalChecks, failures, p50MS, p99MS int)
+}
+
+// MetricsRecorder receives a start/finish event for every check that
+// actually executes (after it has acquired a worker slot), so a
+// process-wide counter can track in-flight/total/failed for GET /metrics.
+// Declared at the point of use, per this repo's interface convention;
+// satisfied structurally by *metrics.Metrics.
+type MetricsRecorder interface {
+	CheckStarted()
+	CheckFinished(failed bool)
 }
 
 // Target is a single URL to be checked.
@@ -61,14 +68,7 @@ type Target struct {
 	URL string
 }
 
-// Result is the outcome of checking one Target. Err is non-nil for any
-// failure to complete the check — a malformed URL, a rate-limit wait that
-// was interrupted, a timeout, a connection failure, and so on — and
-// StatusCode/Duration are only meaningful when Err is nil.
-//
-// This intentionally mirrors what Phase 2's store.CheckResult is expected to
-// persist; keeping the shape close now means wiring RecordCheck through
-// later should be closer to a rename than a redesign.
+// Result is the outcome of checking one Target.
 type Result struct {
 	Target     Target
 	StatusCode int
@@ -77,36 +77,37 @@ type Result struct {
 	CheckedAt  time.Time
 }
 
+// Failed reports whether this Result counts as a failure: a transport-level
+// error (including a timeout or an interrupted rate-limit wait), or an HTTP
+// response outside the 2xx/3xx range. This is the single definition of
+// "down" that both the dashboard (checkStatusFromResult) and the /metrics
+// failure counter use.
+func (r Result) Failed() bool {
+	return r.Err != nil || r.StatusCode < 200 || r.StatusCode >= 400
+}
+
+// dbOpTimeout bounds each individual store call made from tick(). tick()
+// deliberately does not inherit Run's shutdown context (see Run/tick below),
+// so without its own deadline a stuck DB round-trip could block shutdown
+// forever; this is the "no unbounded blocking calls" rule from the
+// instruction file, applied to the one place that was missing it.
+const dbOpTimeout = 5 * time.Second
+
 // Pool checks targets concurrently, bounded by MaxWorkers and by the
-// supplied rate limiter. A Pool is safe for concurrent use — in particular,
-// Check may be called from multiple goroutines (e.g. a real tick loop and a
-// manual "check now" request) simultaneously; MaxWorkers still bounds the
-// total in-flight checks across all of them, since the semaphore is created
-// once in New and shared by every call to Check.
+// supplied rate limiter.
 type Pool struct {
 	client       *http.Client
 	limiter      *ratelimit.Manager
 	store        Store
 	publisher    Publisher
+	metrics      MetricsRecorder
 	checkTimeout time.Duration
 
 	sem chan struct{}
 }
 
-// New builds a Pool. If client is nil, New constructs a default one whose
-// Transport raises MaxIdleConnsPerHost — left at net/http's default of 2,
-// that setting alone would throttle throughput to any single domain no
-// matter how large maxWorkers is, making the rate limiter (not connection
-// starvation) the thing actually governing per-domain throughput.
-//
-// limiter may be nil, which disables per-domain rate limiting entirely
-// (every check proceeds as soon as a worker slot is free); this is mainly
-// useful for tests and benchmarks that want to isolate the semaphore's
-// behavior from the limiter's.
-//
-// publisher may be nil to disable live events (used by tests that only
-// exercise Check directly); when set, the tick loop publishes a result event
-// per completed check and a stats event per target per tick.
+// New builds a Pool. See the previous phases' doc comments for client,
+// limiter, and publisher semantics — unchanged here.
 func New(client *http.Client, limiter *ratelimit.Manager, s Store, maxWorkers int, checkTimeout time.Duration, pub Publisher) *Pool {
 	if maxWorkers < 1 {
 		maxWorkers = 1
@@ -124,41 +125,62 @@ func New(client *http.Client, limiter *ratelimit.Manager, s Store, maxWorkers in
 	}
 }
 
-// Run starts a background loop that periodically fetches targets and checks them.
-// It blocks until the context is canceled.
+// SetMetrics wires m into the pool so every check reports through it. This
+// is a setter rather than a New parameter so existing callers/tests that
+// build a Pool without metrics don't need to change — metrics is optional
+// the same way publisher and limiter already are.
+func (p *Pool) SetMetrics(m MetricsRecorder) {
+	p.metrics = m
+}
+
+// Run starts a background loop that periodically fetches targets and checks
+// them. It blocks until ctx is canceled.
+//
+// ctx only governs *this loop*: whether to start another tick. It is
+// intentionally not threaded into tick() itself — see tick's doc comment.
+// Because tick() is called synchronously from this loop, Run can only
+// observe ctx.Done() between ticks, never in the middle of one: a tick
+// already under way when ctx is canceled always runs to completion before
+// Run returns. That's what lets main.go wait on this goroutine and get a
+// real "in-flight checks finished" guarantee during shutdown.
 func (p *Pool) Run(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	// Perform an initial check immediately.
-	p.tick(ctx)
+	p.tick()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			p.tick(ctx)
+			p.tick()
 		}
 	}
 }
 
-func (p *Pool) tick(ctx context.Context) {
+// tick runs one round of checks against every target. It deliberately uses
+// context.Background() as its root, detached from Run's cancellable ctx: a
+// tick already in progress when a shutdown signal arrives must not have its
+// in-flight HTTP checks aborted mid-request just because the process is
+// stopping. Each individual check is still bounded by p.checkTimeout inside
+// checkOne, and every store call gets its own dbOpTimeout, so nothing here
+// can actually block forever.
+func (p *Pool) tick() {
 	if p.store == nil {
 		return
 	}
-	targets, err := p.store.ListTargets(ctx)
+
+	listCtx, cancel := context.WithTimeout(context.Background(), dbOpTimeout)
+	targets, err := p.store.ListTargets(listCtx)
+	cancel()
 	if err != nil {
-		// Just log or drop error in this context since we don't have a logger injected,
-		// but standard practice here is to let it fail or log it.
-		// For now we just return.
+		slog.Error("monitor: list targets failed", "err", err)
 		return
 	}
 
-	results := p.Check(ctx, targets)
+	results := p.Check(context.Background(), targets)
 	for _, res := range results {
-		// Live event first so the dashboard reflects the check as it
-		// happens; the recorded history below is what makes it durable.
 		if p.publisher != nil {
 			p.publisher.PublishCheck(res)
 		}
@@ -166,15 +188,22 @@ func (p *Pool) tick(ctx context.Context) {
 		if res.Err != nil {
 			errMsg = res.Err.Error()
 		}
-		_ = p.store.RecordCheck(ctx, res.Target.ID, res.StatusCode, int(res.Duration.Milliseconds()), errMsg, res.CheckedAt)
+
+		recCtx, cancel := context.WithTimeout(context.Background(), dbOpTimeout)
+		err := p.store.RecordCheck(recCtx, res.Target.ID, res.StatusCode, int(res.Duration.Milliseconds()), errMsg, res.CheckedAt)
+		cancel()
+		if err != nil {
+			slog.Error("monitor: record check failed", "target_id", res.Target.ID, "err", err)
+		}
 	}
 
-	// Once the tick's checks are recorded, publish per-target aggregates so
-	// the dashboard's stats update once per tick rather than once per check.
 	if p.publisher != nil {
 		for _, target := range targets {
-			stats, err := p.store.RecentStats(ctx, target.ID)
+			statsCtx, cancel := context.WithTimeout(context.Background(), dbOpTimeout)
+			stats, err := p.store.RecentStats(statsCtx, target.ID)
+			cancel()
 			if err != nil {
+				slog.Error("monitor: recent stats failed", "target_id", target.ID, "err", err)
 				continue
 			}
 			p.publisher.PublishStats(stats.TargetID, stats.TotalChecks, stats.Failures, stats.P50LatencyMS, stats.P99LatencyMS)
@@ -182,10 +211,6 @@ func (p *Pool) tick(ctx context.Context) {
 	}
 }
 
-// defaultHTTPClient returns an http.Client tuned for many concurrent
-// requests against a modest number of distinct hosts. See the New doc
-// comment and the README's "Why these choices" section for why
-// MaxIdleConnsPerHost specifically is raised here.
 func defaultHTTPClient() *http.Client {
 	return &http.Client{
 		Transport: &http.Transport{
@@ -193,22 +218,12 @@ func defaultHTTPClient() *http.Client {
 			MaxIdleConnsPerHost: 100,
 			IdleConnTimeout:     90 * time.Second,
 		},
-		// No client-level Timeout: each request's deadline is set
-		// per-check via context in checkOne, derived from the ctx the
-		// caller passed to Check so a process shutdown still cancels
-		// in-flight requests promptly.
 	}
 }
 
 // Check runs one round of checks against every target, fanning out one
 // goroutine per target but never letting more than MaxWorkers run their
-// actual HTTP call at once. It blocks until every target has a Result — a
-// canceled ctx does not abort in-flight checks early, it makes any
-// goroutine still waiting on a worker slot or a rate-limit token fail fast
-// with ctx.Err() instead.
-//
-// Results are returned in the same order as targets, one per target,
-// regardless of completion order.
+// actual HTTP call at once.
 func (p *Pool) Check(ctx context.Context, targets []Target) []Result {
 	results := make([]Result, len(targets))
 
@@ -226,7 +241,21 @@ func (p *Pool) Check(ctx context.Context, targets []Target) []Result {
 			}
 			defer func() { <-p.sem }()
 
-			results[i] = p.checkOne(ctx, target)
+			if p.metrics != nil {
+				p.metrics.CheckStarted()
+			}
+			res := p.checkOne(ctx, target)
+			if p.metrics != nil {
+				p.metrics.CheckFinished(res.Failed())
+			}
+			if res.Err != nil {
+				slog.Warn("check failed",
+					"target_id", target.ID,
+					"url", target.URL,
+					"err", res.Err,
+				)
+			}
+			results[i] = res
 		}(i, target)
 	}
 	wg.Wait()
@@ -234,8 +263,6 @@ func (p *Pool) Check(ctx context.Context, targets []Target) []Result {
 	return results
 }
 
-// checkOne performs a single check: wait for the target's domain to have a
-// rate-limit token, then issue a GET request bounded by p.checkTimeout.
 func (p *Pool) checkOne(ctx context.Context, target Target) Result {
 	now := time.Now()
 
@@ -265,9 +292,6 @@ func (p *Pool) checkOne(ctx context.Context, target Target) Result {
 		return Result{Target: target, Duration: duration, Err: fmt.Errorf("monitor: request failed: %w", err), CheckedAt: now}
 	}
 	defer resp.Body.Close()
-	// Drain the body so the underlying connection can be reused (matters a
-	// lot here: this is exactly the throughput MaxIdleConnsPerHost exists to
-	// protect).
 	_, _ = io.Copy(io.Discard, resp.Body)
 
 	return Result{
@@ -278,11 +302,6 @@ func (p *Pool) checkOne(ctx context.Context, target Target) Result {
 	}
 }
 
-// domainOf extracts the host (no port) from a target URL, used as the
-// ratelimit.Manager key. Two targets on the same host but different ports
-// intentionally share a rate-limit bucket — the limit exists to be polite to
-// a host, and a host is identified by its name, not the port a particular
-// service happens to listen on.
 func domainOf(rawURL string) (string, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
