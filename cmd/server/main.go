@@ -24,6 +24,7 @@ import (
 	"github.com/programmer-bell/pulse-monitor/internal/ratelimit"
 	"github.com/programmer-bell/pulse-monitor/internal/sse"
 	"github.com/programmer-bell/pulse-monitor/internal/store"
+	"github.com/programmer-bell/pulse-monitor/metrics"
 	"github.com/programmer-bell/pulse-monitor/migrations"
 )
 
@@ -64,7 +65,9 @@ func run() error {
 
 	dbStore := store.New(pool)
 	limiter := ratelimit.NewManager(cfg.DomainRPS)
+	defer limiter.Close()
 	hub := sse.New()
+	metricsRecorder := metrics.New()
 
 	// Handlers double as the monitor's Publisher (rendering SSE events to
 	// out-of-band HTML), so they must exist before the engine starts ticking.
@@ -74,21 +77,28 @@ func run() error {
 	}
 
 	mon := monitor.New(nil, limiter, dbStore, cfg.MaxWorkers, cfg.CheckTimeout, h)
+	mon.SetMetrics(metricsRecorder)
 
-	// Start monitor loop
-	go mon.Run(ctx, cfg.CheckInterval)
+	// monDone closes once mon.Run returns, which only happens after any
+	// tick already in progress when ctx is canceled finishes on its own —
+	// see monitor.Pool.Run/tick. main() waits on this channel below,
+	// bounded, before declaring shutdown complete.
+	monDone := make(chan struct{})
+	go func() {
+		defer close(monDone)
+		mon.Run(ctx, cfg.CheckInterval)
+	}()
 
-	// Initialize the HTTP request multiplexer (router).
 	mux := http.NewServeMux()
 	// Register the health check endpoint.
 	mux.HandleFunc("GET /healthz", healthz)
-
+	mux.Handle("GET /metrics", metricsRecorder.Handler())
 	h.Register(mux)
 
 	// Configure the HTTP server with port and timeouts.
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Port),
-		Handler:           mux,
+		Handler:           handlers.Recover(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -123,6 +133,16 @@ func run() error {
 	if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("http server: %w", err)
 	}
+
+	// Bounded wait for any tick that was already in flight when the signal
+	// arrived — see the monDone comment above.
+	select {
+	case <-monDone:
+		slog.Info("monitor loop stopped, in-flight checks completed")
+	case <-time.After(cfg.CheckTimeout + 5*time.Second):
+		slog.Warn("timed out waiting for monitor loop to stop")
+	}
+
 	slog.Info("server stopped cleanly")
 	return nil
 }
