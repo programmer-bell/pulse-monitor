@@ -278,7 +278,7 @@ func TestMonitor_TickPublishesCheckAndStats(t *testing.T) {
 	pub := &fakePublisher{}
 
 	pool := New(nil, nil, store, 4, time.Second, pub)
-	pool.tick(context.Background())
+	pool.tick()
 
 	pub.mu.Lock()
 	defer pub.mu.Unlock()
