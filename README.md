@@ -1,4 +1,8 @@
-# Concurrent Health Monitor
+<div align="center">
+  <img src="web/static/images/icon.jpg" alt="Pulse Monitor logo" width="96" height="96" />
+</div>
+
+<h1 align="center">Concurrent Health Monitor</h1>
 
 A bounded worker pool checks every URL you give it, in parallel, on a timer —
 with a per-domain rate limit so it never hammers a single host — and streams
@@ -13,6 +17,8 @@ not the CRUD around it.
 > **Status / numbers:** see [Performance](#performance) — that section is
 > intentionally left with real, reproducible commands rather than made-up
 > figures. Fill it in from your own run before you link this in an application.
+
+---
 
 ## What it looks like
 
@@ -175,8 +181,8 @@ make docker-run
 All configuration is environment variables — see [`.env.example`](.env.example).
 
 | Variable                  | Default  | Meaning                                             |
-| -------------------------- | -------- | ---------------------------------------------------- |
-| `PORT`                    | `8080`   | HTTP listen port                                      |
+| :------------------------ | :------- | :-------------------------------------------------- |
+| `PORT`                    | `8080`   | HTTP listen port                                     |
 | `DATABASE_URL`            | *(required)* | Postgres connection string (Neon pooled URL)     |
 | `MAX_WORKERS`             | `64`     | Upper bound on simultaneous in-flight checks          |
 | `CHECK_INTERVAL_SECONDS`  | `30`     | How often every target is re-checked                  |
