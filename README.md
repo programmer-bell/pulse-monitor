@@ -26,6 +26,8 @@ _Add a screenshot or a short GIF of the running dashboard here before you
 publish this repo — it's the single highest-leverage thing you can add for a
 recruiter skimming GitHub._
 
+![Pulse Monitor dashboard — concurrent health checks at a glance](web/static/images/screenshort.png)
+
 ## Why these choices
 
 A few decisions in this repo are deliberate and worth explaining, since a
@@ -204,6 +206,8 @@ single-threaded happy paths — see
 that distinction is a hard requirement in this repo, not a nice-to-have.
 
 ## Deploying to Render
+
+The live instance runs at **[https://pulse-monitor-vqwz.onrender.com/](https://pulse-monitor-vqwz.onrender.com/)** — open it to explore the running dashboard without any setup.
 
 The short version: connect the repo, point `DATABASE_URL` at Neon, deploy.
 The [`render.yaml`](render.yaml) Blueprint in this repo does the rest —
