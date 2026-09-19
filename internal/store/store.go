@@ -2,9 +2,11 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/programmer-bell/pulse-monitor/internal/monitor"
 )
@@ -22,12 +24,18 @@ func New(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool}
 }
 
-// CreateTarget inserts a new target into the database.
+// CreateTarget inserts a new target into the database. A duplicate URL is
+// signalled with monitor.ErrTargetExists rather than a raw pgx unique
+// violation, so callers never have to know the driver's error codes.
 func (s *Store) CreateTarget(ctx context.Context, url string) (Target, error) {
 	query := `INSERT INTO targets (url) VALUES ($1) RETURNING id, url`
 	var t Target
 	err := s.pool.QueryRow(ctx, query, url).Scan(&t.ID, &t.URL)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return Target{}, monitor.ErrTargetExists
+		}
 		return Target{}, fmt.Errorf("create target: %w", err)
 	}
 	return t, nil

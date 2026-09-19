@@ -18,6 +18,7 @@ package monitor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -67,6 +68,13 @@ type Target struct {
 	ID  string
 	URL string
 }
+
+// ErrTargetExists is returned by Store.CreateTarget when a target with the
+// same URL is already being monitored. Like Target and Stats, it lives here
+// so internal/store (which detects the unique violation) and
+// internal/handlers (which turns it into an HTTP 409) can share one sentinel
+// without the handler knowing anything about pgx errors.
+var ErrTargetExists = errors.New("monitor: target already exists")
 
 // Result is the outcome of checking one Target.
 type Result struct {
