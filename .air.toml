@@ -12,6 +12,11 @@ tmp_dir = "tmp"
   stop_on_error = true
   poll = true
   poll_interval = 500
+  # On shutdown air SIGINTs the server and gives it this long to drain
+  # before SIGKILL — lets `docker compose kill -s SIGTERM app` end in a
+  # graceful log instead of an abrupt kill.
+  send_interrupt = true
+  kill_delay = "3s"
 
 [log]
   time = true
