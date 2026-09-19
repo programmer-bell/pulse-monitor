@@ -6,15 +6,20 @@ FROM golang:1.25-bookworm AS dev
 WORKDIR /app
 # Download dependencies first to leverage Docker cache
 COPY go.mod ./
-RUN go mod download
+RUN go mod download && go install github.com/air-verse/air@v1.61.1
+# The host .git is bind-mounted and owned by a non-root uid; mark it safe so
+# `go build` VCS stamping does not fail with "dubious ownership" under air.
+RUN git config --global --add safe.directory /app
 # Copy the rest of the source code
 COPY . .
 # Disable CGO for static binaries (standard Go practice)
 ENV CGO_ENABLED=0
 # Expose the default HTTP port
 EXPOSE 8080
-# Run the application using 'air' for live reloading
-CMD ["go", "run", "github.com/air-verse/air@v1.61.1", "-c", ".air.toml"]
+# Run air directly as PID 1 so a SIGTERM from `docker compose kill` reaches
+# the server and it shuts down gracefully, instead of `go run`'s supervisor
+# chain swallowing the signal. See the phase-5 exit criteria.
+CMD ["air", "-c", ".air.toml"]
 
 # ---------------------------------------------------------
 # Builder Stage
