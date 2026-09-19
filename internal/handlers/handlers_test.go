@@ -88,8 +88,15 @@ func TestValidateTargetURL(t *testing.T) {
 }
 
 func TestHandleCreateTarget(t *testing.T) {
-	store := &fakeStore{}
-	h := testHandlers(store)
+	hub := sse.New()
+	h, err := New(&fakeStore{}, hub)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	ch := make(chan []byte, 4)
+	hub.Subscribe(ch)
+	defer hub.Unsubscribe(ch)
 
 	req := httptest.NewRequest(http.MethodPost, "/targets", nil)
 	req.Form = make(map[string][]string)
@@ -101,11 +108,33 @@ func TestHandleCreateTarget(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
-	if store.createdURL != "https://example.com" {
+	if store := h.store.(*fakeStore); store.createdURL != "https://example.com" {
 		t.Fatalf("created URL = %q, want trimmed URL", store.createdURL)
 	}
-	if rec.Body.String() == "" {
-		t.Fatal("expected target row response")
+	// The row is delivered to every tab via the target_added SSE event, so
+	// the POST response must not carry row HTML — that would double-insert
+	// the row in the submitting tab.
+	if body := rec.Body.String(); body != "" {
+		t.Fatalf("POST response should be empty, got %q", body)
+	}
+
+	select {
+	case frame := <-ch:
+		body := string(frame)
+		for _, want := range []string{
+			"event: target_added\n",
+			`id="targets-tbody"`,
+			"hx-swap-oob",
+			"beforeend",
+			`id="target-target-1"`,
+			"https://example.com",
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("target_added frame missing %q:\n%s", want, body)
+			}
+		}
+	case <-time.After(time.Second):
+		t.Fatal("HandleCreateTarget never broadcast a target_added event")
 	}
 }
 
@@ -127,8 +156,16 @@ func TestHandleCreateTargetRejectsInvalidURL(t *testing.T) {
 }
 
 func TestHandleDeleteTarget(t *testing.T) {
-	store := &fakeStore{}
-	h := testHandlers(store)
+	hub := sse.New()
+	h, err := New(&fakeStore{}, hub)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	ch := make(chan []byte, 4)
+	hub.Subscribe(ch)
+	defer hub.Unsubscribe(ch)
+
 	req := httptest.NewRequest(http.MethodDelete, "/targets/target-1", nil)
 	req.SetPathValue("id", "target-1")
 	rec := httptest.NewRecorder()
@@ -138,8 +175,25 @@ func TestHandleDeleteTarget(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
-	if store.deletedTarget != "target-1" {
+	if store := h.store.(*fakeStore); store.deletedTarget != "target-1" {
 		t.Fatalf("deleted target = %q, want target-1", store.deletedTarget)
+	}
+
+	select {
+	case frame := <-ch:
+		body := string(frame)
+		for _, want := range []string{
+			"event: target_removed\n",
+			`id="target-target-1"`,
+			"hx-swap-oob",
+			`="delete"`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("target_removed frame missing %q:\n%s", want, body)
+			}
+		}
+	case <-time.After(time.Second):
+		t.Fatal("HandleDeleteTarget never broadcast a target_removed event")
 	}
 }
 
@@ -166,7 +220,7 @@ func TestNewParsesEmbeddedTemplates(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	for _, name := range []string{"index.html", "target_row", "stats"} {
+	for _, name := range []string{"index.html", "target_row", "stats", "target_added", "target_removed", "check_status"} {
 		if h.tmpl.Lookup(name) == nil {
 			t.Fatalf("template %q not parsed from embedded FS", name)
 		}
@@ -303,6 +357,114 @@ func TestPublishStatsBroadcastsAggregates(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("PublishStats never broadcast an event")
+	}
+}
+
+// TestPublishStatsBroadcastsZeroTotalGatesLatencies verifies the first tick
+// for a freshly added target (no recorded checks yet) keeps the latency
+// placeholders as "—" instead of flipping them to "0 ms".
+func TestPublishStatsBroadcastsZeroTotalGatesLatencies(t *testing.T) {
+	hub := sse.New()
+	h, err := New(nil, hub)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	ch := make(chan []byte, 4)
+	hub.Subscribe(ch)
+	defer hub.Unsubscribe(ch)
+
+	h.PublishStats("t-1", 0, 0, 0, 0)
+
+	select {
+	case frame := <-ch:
+		body := string(frame)
+		if strings.Contains(body, "0 ms") {
+			t.Fatalf("zero-total stats frame should gate latencies to —, got 0 ms:\n%s", body)
+		}
+		for _, want := range []string{
+			"event: stats\n",
+			`id="stats-t-1"`,
+			"mini-stat-value\">—<",
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("zero-total stats frame missing %q:\n%s", want, body)
+			}
+		}
+	case <-time.After(time.Second):
+		t.Fatal("PublishStats never broadcast an event")
+	}
+}
+
+// TestPublishTargetAddedBroadcastsRow verifies a newly created target is
+// broadcast on the "target_added" channel as a <tbody> fragment carrying an
+// out-of-band "beforeend" swap targeting #targets-tbody, so every open tab
+// appends the row.
+func TestPublishTargetAddedBroadcastsRow(t *testing.T) {
+	hub := sse.New()
+	h, err := New(nil, hub)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	ch := make(chan []byte, 4)
+	hub.Subscribe(ch)
+	defer hub.Unsubscribe(ch)
+
+	h.PublishTargetAdded(monitor.Target{ID: "t-1", URL: "https://example.com"})
+
+	select {
+	case frame := <-ch:
+		body := string(frame)
+		for _, want := range []string{
+			"event: target_added\n",
+			`id="targets-tbody"`,
+			"hx-swap-oob",
+			"beforeend",
+			`id="target-t-1"`,
+			`id="status-t-1"`,
+			"https://example.com",
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("target_added frame missing %q:\n%s", want, body)
+			}
+		}
+	case <-time.After(time.Second):
+		t.Fatal("PublishTargetAdded never broadcast an event")
+	}
+}
+
+// TestPublishTargetRemovedBroadcastsDelete verifies a removed target is
+// broadcast on the "target_removed" channel as an out-of-band "delete"
+// fragment, so every open tab removes the row.
+func TestPublishTargetRemovedBroadcastsDelete(t *testing.T) {
+	hub := sse.New()
+	h, err := New(nil, hub)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	ch := make(chan []byte, 4)
+	hub.Subscribe(ch)
+	defer hub.Unsubscribe(ch)
+
+	h.PublishTargetRemoved("t-1")
+
+	select {
+	case frame := <-ch:
+		body := string(frame)
+		for _, want := range []string{
+			"event: target_removed\n",
+			`id="target-t-1"`,
+			"hx-swap-oob",
+			`="delete"`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("target_removed frame missing %q:\n%s", want, body)
+			}
+		}
+	case <-time.After(time.Second):
+		t.Fatal("PublishTargetRemoved never broadcast an event")
 	}
 }
 

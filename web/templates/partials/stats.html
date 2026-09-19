@@ -2,7 +2,7 @@
 <span id="stats-{{.ID}}" hx-swap-oob="true">
     <span class="mini-stat"><span class="mini-stat-label">checks</span><span class="mini-stat-value">{{.Total}}</span></span>
     <span class="mini-stat"><span class="mini-stat-label">failures</span><span class="mini-stat-value">{{.Failures}}</span></span>
-    <span class="mini-stat"><span class="mini-stat-label">p50</span><span class="mini-stat-value">{{.P50MS}} ms</span></span>
-    <span class="mini-stat"><span class="mini-stat-label">p99</span><span class="mini-stat-value">{{.P99MS}} ms</span></span>
+    <span class="mini-stat"><span class="mini-stat-label">p50</span><span class="mini-stat-value">{{if gt .Total 0}}{{.P50MS}} ms{{else}}—{{end}}</span></span>
+    <span class="mini-stat"><span class="mini-stat-label">p99</span><span class="mini-stat-value">{{if gt .Total 0}}{{.P99MS}} ms{{else}}—{{end}}</span></span>
 </span>
 {{end}}

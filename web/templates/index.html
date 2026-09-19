@@ -49,9 +49,10 @@
         </section>
     </div>
 
-    <!-- Receives the live "check"/"stats" events; out-of-band fragments
-         inside the event data are relocated to the target rows by htmx. -->
-    <div id="sse-sink" hidden sse-swap="check stats"></div>
+    <!-- Receives the live check/stats/target_added/target_removed events;
+         out-of-band fragments inside the event data are relocated to the
+         target rows by htmx. -->
+    <div id="sse-sink" hidden sse-swap="check,stats,target_added,target_removed"></div>
 
     <script src="/static/js/app.js"></script>
 </body>

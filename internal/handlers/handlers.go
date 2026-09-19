@@ -118,11 +118,12 @@ func (h *Handlers) HandleCreateTarget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Render the new target row
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := h.tmpl.ExecuteTemplate(w, "target_row", target); err != nil {
-		slog.Error("render target_row", "err", err)
-	}
+	// Every open tab appends the new row from the target_added SSE event, so
+	// the POST response carries no row HTML — a response body would insert
+	// the row a second time in the submitting tab, once via the htmx swap
+	// and once via the SSE out-of-band fragment.
+	h.PublishTargetAdded(target)
+	w.WriteHeader(http.StatusOK)
 }
 
 // HandleDeleteTarget removes a target.
@@ -138,6 +139,12 @@ func (h *Handlers) HandleDeleteTarget(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+
+	// The submitting tab already removes its row via the outerHTML swap on
+	// the empty 200 response; every other tab removes it from the
+	// target_removed SSE event. The submitter may also receive that event —
+	// htmx's "delete" out-of-band swap is a no-op when the row is gone.
+	h.PublishTargetRemoved(id)
 
 	// Return empty response (200 OK) so htmx removes the element via outerHTML swap.
 	w.WriteHeader(http.StatusOK)
@@ -254,6 +261,37 @@ func (h *Handlers) PublishStats(targetID string, totalChecks, failures, p50MS, p
 		return
 	}
 	h.hub.Publish(sse.Event{Name: "stats", Data: buf.Bytes()})
+}
+
+// PublishTargetAdded wraps a created target's row in a <tbody> carrying an
+// out-of-band "beforeend" fragment and broadcasts it on the "target_added"
+// channel. Every open tab appends the row to #targets-tbody — not just the
+// tab that submitted the create form.
+func (h *Handlers) PublishTargetAdded(target monitor.Target) {
+	if h.hub == nil {
+		return
+	}
+	var buf bytes.Buffer
+	if err := h.tmpl.ExecuteTemplate(&buf, "target_added", target); err != nil {
+		slog.Error("render target_added", "err", err)
+		return
+	}
+	h.hub.Publish(sse.Event{Name: "target_added", Data: buf.Bytes()})
+}
+
+// PublishTargetRemoved broadcasts an out-of-band "delete" fragment for one
+// target's row on the "target_removed" channel, so every open tab removes
+// the row, not just the tab that clicked Delete.
+func (h *Handlers) PublishTargetRemoved(id string) {
+	if h.hub == nil {
+		return
+	}
+	var buf bytes.Buffer
+	if err := h.tmpl.ExecuteTemplate(&buf, "target_removed", struct{ ID string }{ID: id}); err != nil {
+		slog.Error("render target_removed", "err", err)
+		return
+	}
+	h.hub.Publish(sse.Event{Name: "target_removed", Data: buf.Bytes()})
 }
 
 // checkStatusFromResult maps a raw engine result to the renderable
