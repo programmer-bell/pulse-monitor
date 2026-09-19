@@ -11,7 +11,10 @@ import (
 	"github.com/programmer-bell/pulse-monitor/internal/monitor"
 )
 
-// Target represents a monitored URL.
+// Target is a monitored URL. It is aliased from internal/monitor: the
+// engine's shared value types live there, so this package (and handlers)
+// import monitor for the types while monitor itself imports neither — see
+// the README's dependency note under "Why these choices".
 type Target = monitor.Target
 
 // Store wraps a Postgres connection pool.

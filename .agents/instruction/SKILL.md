@@ -33,7 +33,8 @@ internal/ratelimit  hand-rolled token-bucket limiter (this is a showcase piece �
 internal/monitor    the worker-pool/scheduler engine — the concurrency core
 internal/sse        pub/sub hub for Server-Sent Events, no external pubsub
 internal/handlers   HTTP handlers; thin — parse request, call one collaborator, render
-internal/logging    log/slog setup
+internal/metrics    atomic counters behind /metrics (slog is configured inline in
+                    cmd/server — there is no logging package)
 web/                templates + static assets, served directly, no templating engine
                      beyond html/template
 ```
