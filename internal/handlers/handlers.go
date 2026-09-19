@@ -299,14 +299,13 @@ func (h *Handlers) PublishTargetRemoved(id string) {
 // errors). Display values are computed here so the template stays free of
 // business logic.
 func checkStatusFromResult(r monitor.Result) CheckStatusView {
-	ok := r.Err == nil && r.StatusCode >= 200 && r.StatusCode < 400
 	v := CheckStatusView{ID: r.Target.ID}
-	if ok {
-		v.Status = "up"
-		v.Label = "Up"
-	} else {
+	if r.Failed() {
 		v.Status = "down"
 		v.Label = "Down"
+	} else {
+		v.Status = "up"
+		v.Label = "Up"
 	}
 	if r.Duration > 0 {
 		v.Latency = fmt.Sprintf("%d ms", r.Duration.Milliseconds())
