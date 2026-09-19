@@ -230,7 +230,6 @@ internal/store/        Postgres access via pgx, one method per query
 internal/sse/           Server-Sent Events pub/sub hub
 internal/handlers/      HTTP layer + template rendering (also the SSE Publisher)
 internal/metrics/       atomic counters behind /metrics
-internal/logging/       log/slog setup
 web/templates/           html/template files (index + OOB partials)
 web/static/               CSS (vercel-style dark theme) + the one JS file
 migrations/               reference copy of the schema (applied automatically at boot)
