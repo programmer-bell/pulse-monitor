@@ -15,3 +15,9 @@ CREATE TABLE IF NOT EXISTS checks (
     error_message TEXT,
     checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Serve RecentStats (WHERE target_id = $1 AND checked_at >= $2) and the FK
+-- cascade delete with an index instead of scanning every historical row as
+-- the checks table grows. Postgres does not index FK columns automatically.
+CREATE INDEX IF NOT EXISTS checks_target_id_checked_at_idx
+    ON checks (target_id, checked_at DESC);

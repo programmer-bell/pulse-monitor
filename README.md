@@ -45,8 +45,11 @@ did they copy a tutorial":
   throughput. See the `Transport` setup in `monitor.New`.
 - **Interfaces defined at the point of use, not the point of implementation.**
   `monitor.Store` and `monitor.Publisher` are declared in `internal/monitor`,
-  satisfied structurally by `*store.Store` and `*handlers.Handlers`. Neither
-  of those packages imports `monitor`. This is what makes
+  satisfied structurally by `*store.Store` and `*handlers.Handlers`. The
+  dependency runs one way: `internal/monitor` never imports either package.
+  `*store.Store` and `*handlers.Handlers` do import `internal/monitor`, but
+  only for the small shared value types (`Target`, `Stats`, `Result`) and one
+  sentinel error. This is what makes
   [`internal/monitor/monitor_test.go`](internal/monitor/monitor_test.go)
   possible without a real Postgres connection — it hands the pool a fake
   in-memory `Store` and a real `httptest.Server`, then asserts under `-race`
@@ -230,7 +233,6 @@ internal/store/        Postgres access via pgx, one method per query
 internal/sse/           Server-Sent Events pub/sub hub
 internal/handlers/      HTTP layer + template rendering (also the SSE Publisher)
 internal/metrics/       atomic counters behind /metrics
-internal/logging/       log/slog setup
 web/templates/           html/template files (index + OOB partials)
 web/static/               CSS (vercel-style dark theme) + the one JS file
 migrations/               reference copy of the schema (applied automatically at boot)

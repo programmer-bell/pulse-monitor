@@ -155,6 +155,23 @@ func TestHandleCreateTargetRejectsInvalidURL(t *testing.T) {
 	}
 }
 
+func TestHandleCreateTargetDuplicateIsConflict(t *testing.T) {
+	store := &fakeStore{createErr: monitor.ErrTargetExists}
+	h := testHandlers(store)
+	req := httptest.NewRequest(http.MethodPost, "/targets", nil)
+	req.Form = map[string][]string{"url": {"https://example.com"}}
+	rec := httptest.NewRecorder()
+
+	h.HandleCreateTarget(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d (a duplicate URL is a client error, not a 500)", rec.Code, http.StatusConflict)
+	}
+	if !strings.Contains(rec.Body.String(), "already being monitored") {
+		t.Fatalf("conflict body should explain the problem, got %q", rec.Body.String())
+	}
+}
+
 func TestHandleDeleteTarget(t *testing.T) {
 	hub := sse.New()
 	h, err := New(&fakeStore{}, hub)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -147,6 +148,46 @@ func TestMonitor_UsesRateLimiterPerDomain(t *testing.T) {
 	minExpected := time.Duration(n-1) * 100 * time.Millisecond / 2
 	if elapsed < minExpected {
 		t.Fatalf("checked %d targets on a rate-limited domain in %s, want at least %s — limiter does not appear to be enforced", n, elapsed, minExpected)
+	}
+}
+
+// TestMonitor_BoundRateLimitWait verifies a slow per-domain limiter cannot
+// stall a worker past the per-check timeout. With an empty bucket refilling
+// once per second and a 100ms checkTimeout, every waiter must give up with a
+// rate-limit error promptly instead of blocking until a token appears.
+// Without the timeout on limiter.Wait this test would hang the pool for
+// seconds and only finish because the limiter eventually refills.
+func TestMonitor_BoundRateLimitWait(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	limiter := ratelimit.NewManager(1) // one token/sec; bucket starts empty
+	defer limiter.Close()
+
+	pool := New(nil, limiter, nil, 8, 100*time.Millisecond, nil)
+
+	targets := []Target{
+		{URL: srv.URL},
+		{URL: srv.URL},
+		{URL: srv.URL},
+	}
+
+	start := time.Now()
+	results := pool.Check(context.Background(), targets)
+	elapsed := time.Since(start)
+
+	if elapsed > time.Second {
+		t.Fatalf("check took %s, want bounded by checkTimeout (100ms) — limiter wait is not time-boxed", elapsed)
+	}
+	for i, r := range results {
+		if r.Err == nil {
+			t.Fatalf("results[%d] succeeded; expected a rate-limit timeout with no token within checkTimeout", i)
+		}
+		if !strings.Contains(r.Err.Error(), "rate limit wait") {
+			t.Fatalf("results[%d].Err = %v, want a rate-limit wait error", i, r.Err)
+		}
 	}
 }
 

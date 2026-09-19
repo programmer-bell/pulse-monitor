@@ -21,11 +21,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/programmer-bell/pulse-monitor/internal/config"
 	"github.com/programmer-bell/pulse-monitor/internal/handlers"
+	"github.com/programmer-bell/pulse-monitor/internal/metrics"
 	"github.com/programmer-bell/pulse-monitor/internal/monitor"
 	"github.com/programmer-bell/pulse-monitor/internal/ratelimit"
 	"github.com/programmer-bell/pulse-monitor/internal/sse"
 	"github.com/programmer-bell/pulse-monitor/internal/store"
-	"github.com/programmer-bell/pulse-monitor/metrics"
 	"github.com/programmer-bell/pulse-monitor/migrations"
 )
 

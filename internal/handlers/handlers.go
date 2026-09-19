@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -113,6 +114,10 @@ func (h *Handlers) HandleCreateTarget(w http.ResponseWriter, r *http.Request) {
 
 	target, err := h.store.CreateTarget(r.Context(), rawURL)
 	if err != nil {
+		if errors.Is(err, monitor.ErrTargetExists) {
+			http.Error(w, "A target with this URL is already being monitored", http.StatusConflict)
+			return
+		}
 		slog.Error("create target", "err", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
