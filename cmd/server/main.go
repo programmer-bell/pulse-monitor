@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -95,11 +96,15 @@ func run() error {
 	mux.Handle("GET /metrics", metricsRecorder.Handler())
 	h.Register(mux)
 
-	// Configure the HTTP server with port and timeouts.
+	// Configure the HTTP server with port and timeouts. BaseContext roots
+	// every request context in the process's shutdown context, so a signal
+	// cancels long-lived handlers — the SSE stream above all — instead of
+	// leaving srv.Shutdown waiting on an open stream and timing out.
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Port),
 		Handler:           handlers.Recover(mux),
 		ReadHeaderTimeout: 5 * time.Second,
+		BaseContext:       func(net.Listener) context.Context { return ctx },
 	}
 
 	// Start the HTTP server in a separate goroutine to avoid blocking.

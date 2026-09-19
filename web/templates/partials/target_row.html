@@ -12,7 +12,7 @@
         <span class="mini-stat"><span class="mini-stat-label">p99</span><span class="mini-stat-value">—</span></span>
     </span></td>
     <td class="actions-cell">
-        <button class="delete-btn" hx-delete="/targets/{{.ID}}" hx-target="#target-{{.ID}}" hx-swap="outerHTML">Delete</button>
+        <button class="delete-btn" title="Remove from monitoring" hx-delete="/targets/{{.ID}}" hx-target="#target-{{.ID}}" hx-swap="outerHTML" hx-confirm="Remove {{.URL}} from monitoring?">Delete</button>
     </td>
 </tr>
 {{end}}

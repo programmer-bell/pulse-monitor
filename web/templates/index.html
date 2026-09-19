@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Concurrent Health Monitor</title>
+    <link rel="icon" type="image/jpeg" href="/static/images/icon.jpg">
     <!-- Vercel-style font (Geist/Inter) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -23,14 +24,25 @@
             <p>Concurrent Health Checking Engine</p>
         </header>
 
-        <section class="add-target">
+        <!-- Live process metrics, polled from GET /metrics by app.js -->
+        <section class="metrics-bar card" aria-label="Process metrics">
+            <div class="metric"><span class="metric-value" id="m-checks">—</span><span class="metric-label">Checks</span></div>
+            <div class="metric"><span class="metric-value" id="m-inflight">—</span><span class="metric-label">In Flight</span></div>
+            <div class="metric"><span class="metric-value is-alert-capable" id="m-failures">—</span><span class="metric-label">Failures</span></div>
+            <div class="metric"><span class="metric-value" id="m-success">—</span><span class="metric-label">Success Rate</span></div>
+            <div class="metric"><span class="metric-value" id="m-uptime">—</span><span class="metric-label">Uptime</span></div>
+            <div class="metric-bar"><div class="metric-bar-fill" id="m-success-bar"></div></div>
+        </section>
+
+        <section class="add-target card">
+            <label class="field-label" for="target-url">Add a URL to monitor</label>
             <form hx-post="/targets" hx-target="#targets-tbody" hx-swap="beforeend" hx-on::after-request="if(event.detail.successful) this.reset()">
-                <input type="url" name="url" placeholder="https://example.com" required>
+                <input type="url" id="target-url" name="url" placeholder="https://example.com" required autocomplete="off" spellcheck="false">
                 <button type="submit">Add Target</button>
             </form>
         </section>
 
-        <section class="targets-list">
+        <section class="targets-list card">
             <table>
                 <thead>
                     <tr>
@@ -53,6 +65,9 @@
          out-of-band fragments inside the event data are relocated to the
          target rows by htmx. -->
     <div id="sse-sink" hidden sse-swap="check,stats,target_added,target_removed"></div>
+
+    <!-- Transient error/status messages surfaced by app.js -->
+    <div id="toast" class="toast" hidden></div>
 
     <script src="/static/js/app.js"></script>
 </body>
