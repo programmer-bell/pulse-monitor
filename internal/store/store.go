@@ -91,9 +91,16 @@ func (s *Store) RecordCheck(ctx context.Context, targetID string, statusCode int
 	return nil
 }
 
-// RecentStats calculates aggregate statistics for a given target. Returns the
-// monitor.Stats view type so *Store satisfies monitor.Store (the monitor
-// engine consumes these aggregates and publishes them to the dashboard).
+// recentWindow bounds RecentStats to the last 24 hours of checks. Without a
+// window the aggregation scans the target's entire history on every tick,
+// which grows unboundedly and — as observed live — can exceed dbOpTimeout
+// and silently drop the target's stats event.
+const recentWindow = 24 * time.Hour
+
+// RecentStats calculates aggregate statistics for a given target over its
+// last recentWindow of activity. Returns the monitor.Stats view type so
+// *Store satisfies monitor.Store (the monitor engine consumes these
+// aggregates and publishes them to the dashboard).
 func (s *Store) RecentStats(ctx context.Context, targetID string) (monitor.Stats, error) {
 	query := `
 		SELECT 
@@ -102,11 +109,11 @@ func (s *Store) RecentStats(ctx context.Context, targetID string) (monitor.Stats
 			COALESCE(PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY duration_ms), 0),
 			COALESCE(PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY duration_ms), 0)
 		FROM checks 
-		WHERE target_id = $1
+		WHERE target_id = $1 AND checked_at >= $2
 	`
 	stats := monitor.Stats{TargetID: targetID}
 	var p50, p99 float64
-	err := s.pool.QueryRow(ctx, query, targetID).Scan(
+	err := s.pool.QueryRow(ctx, query, targetID, time.Now().Add(-recentWindow)).Scan(
 		&stats.TotalChecks,
 		&stats.Failures,
 		&p50,
