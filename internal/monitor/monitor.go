@@ -76,6 +76,12 @@ type Target struct {
 // without the handler knowing anything about pgx errors.
 var ErrTargetExists = errors.New("monitor: target already exists")
 
+// ErrTargetNotFound is returned by Store.DeleteTarget when the given target
+// id does not exist. Like ErrTargetExists, it lives here so internal/store
+// (which sees "rows affected = 0") and internal/handlers (which turns it
+// into an HTTP 404) can share one sentinel without either knowing about pgx.
+var ErrTargetNotFound = errors.New("monitor: target not found")
+
 // Result is the outcome of checking one Target.
 type Result struct {
 	Target     Target

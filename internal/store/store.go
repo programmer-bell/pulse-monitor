@@ -67,12 +67,16 @@ func (s *Store) ListTargets(ctx context.Context) ([]Target, error) {
 	return targets, nil
 }
 
-// DeleteTarget removes a target and its associated checks (via CASCADE).
+// DeleteTarget removes a target and its associated checks (via CASCADE). A
+// target id that matches no row is reported as monitor.ErrTargetNotFound so
+// the HTTP layer can answer with a 404 instead of a 500.
 func (s *Store) DeleteTarget(ctx context.Context, id string) error {
-	query := `DELETE FROM targets WHERE id = $1`
-	_, err := s.pool.Exec(ctx, query, id)
+	tag, err := s.pool.Exec(ctx, `DELETE FROM targets WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("delete target: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return monitor.ErrTargetNotFound
 	}
 	return nil
 }
