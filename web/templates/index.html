@@ -53,8 +53,8 @@
                         <th></th>
                     </tr>
                 </thead>
-                <tbody id="targets-tbody" hx-get="/targets" hx-trigger="load">
-                    <!-- Targets loaded here via htmx -->
+                <tbody id="targets-tbody">
+                    {{range .Targets}}{{template "target_row" .}}{{end}}
                 </tbody>
             </table>
             <div id="empty-row" class="empty-row" hidden>No targets yet — add one above.</div>

@@ -73,10 +73,28 @@ var staticFS = func() fs.FS {
 	return sub
 }()
 
-// HandleIndex serves the main index.html page.
+// IndexView is the view-model for index.html.
+type IndexView struct {
+	Targets []monitor.Target
+}
+
+// HandleIndex serves the main index.html page with the target rows rendered
+// server-side. Rendering the rows here — rather than fetching them with a
+// second htmx request on page load — means every target row already exists in
+// the DOM before the /events stream connects. Without it, a check/stats event
+// arriving before that fetch completes would be dropped by htmx's
+// htmx:oobErrorNoTarget, leaving the row stuck on "Pending" until the next
+// tick (up to CHECK_INTERVAL_SECONDS later).
 func (h *Handlers) HandleIndex(w http.ResponseWriter, r *http.Request) {
+	targets, err := h.store.ListTargets(r.Context())
+	if err != nil {
+		slog.Error("list targets", "err", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := h.tmpl.ExecuteTemplate(w, "index.html", nil); err != nil {
+	if err := h.tmpl.ExecuteTemplate(w, "index.html", IndexView{Targets: targets}); err != nil {
 		slog.Error("render index", "err", err)
 	}
 }
@@ -140,6 +158,10 @@ func (h *Handlers) HandleDeleteTarget(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.store.DeleteTarget(r.Context(), id); err != nil {
+		if errors.Is(err, monitor.ErrTargetNotFound) {
+			http.Error(w, "Target not found", http.StatusNotFound)
+			return
+		}
 		slog.Error("delete target", "err", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return

@@ -214,6 +214,51 @@ func TestHandleDeleteTarget(t *testing.T) {
 	}
 }
 
+func TestHandleDeleteTargetNotFound(t *testing.T) {
+	h := testHandlers(&fakeStore{deleteErr: monitor.ErrTargetNotFound})
+	req := httptest.NewRequest(http.MethodDelete, "/targets/missing", nil)
+	req.SetPathValue("id", "missing")
+	rec := httptest.NewRecorder()
+
+	h.HandleDeleteTarget(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d (a missing target is a client error, not a 500)", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestHandleIndexRendersTargets(t *testing.T) {
+	store := &fakeStore{targets: []monitor.Target{
+		{ID: "target-1", URL: "https://one.example.com"},
+		{ID: "target-2", URL: "https://two.example.com"},
+	}}
+	h, err := New(store, nil)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+
+	h.HandleIndex(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	body := rec.Body.String()
+	// Rows must be rendered into the tbody on first paint — not fetched with
+	// a second request — so no SSE check/stats event can arrive before its
+	// row exists (the htmx:oobErrorNoTarget race).
+	if !strings.Contains(body, `id="targets-tbody"`) {
+		t.Fatalf("index body missing tbody")
+	}
+	for _, want := range []string{`id="target-target-1"`, "https://one.example.com", `id="target-target-2"`, "https://two.example.com"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("index body missing %q:\n%s", want, body)
+		}
+	}
+}
+
 func TestHandleListTargetsReturnsServerError(t *testing.T) {
 	h := testHandlers(&fakeStore{listErr: errors.New("database unavailable")})
 	req := httptest.NewRequest(http.MethodGet, "/targets", nil)
