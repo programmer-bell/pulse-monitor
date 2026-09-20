@@ -14,9 +14,9 @@ This exists as a portfolio piece: the point is the concurrency engine in
 [`internal/monitor`](internal/monitor) and [`internal/ratelimit`](internal/ratelimit),
 not the CRUD around it.
 
-> **Status / numbers:** see [Performance](#performance) — that section is
-> intentionally left with real, reproducible commands rather than made-up
-> figures. Fill it in from your own run before you link this in an application.
+> **Status / numbers:** see [Performance](#performance) — every figure there
+> is real and reproducible, with the exact command that produced it (run it
+> yourself: `make load-up && go run ./cmd/loadtest -targets 500 -duration 180s`).
 
 ---
 
@@ -106,32 +106,71 @@ together — see [`.agents/instruction/SKILL.md`](.agents/instruction/SKILL.md)
 
 ## Performance
 
-The rate limiter's own concurrency test is real and reproducible right now:
+Two kinds of real number, each with the exact command that produced it.
+
+**Engine ceiling** — the pure worker pool against a single fast local
+upstream, no database involved (a `go test` micro-benchmark):
 
 ```
-$ go test -race ./internal/ratelimit/... -v
-=== RUN   TestBucket_RespectsRate
---- PASS: TestBucket_RespectsRate (0.35s)
-=== RUN   TestManager_PerKeyIsolation
---- PASS: TestManager_PerKeyIsolation (0.00s)
-=== RUN   TestManager_ConcurrentCreation
---- PASS: TestManager_ConcurrentCreation (0.20s)
-PASS
+$ go test ./internal/monitor/... -run '^$' -bench BenchmarkPool_Check -benchtime 2s
+BenchmarkPool_Check-12  692  3221233 ns/op  62088 checks/sec
 ```
 
-The worker pool's concurrency bound is verified the same way in
-[`internal/monitor/monitor_test.go`](internal/monitor/monitor_test.go)
-(`TestMonitor_BoundsConcurrency`), against a real `httptest.Server`.
+**Sustained throughput through the whole pipeline** — the prod Docker image
+writing every check to Neon Postgres, monitoring 500 targets served by a
+throwaway internal target server on the same Docker network, so no external
+site gets hammered for the numbers. Reproduce with:
 
-What's *not* filled in yet, on purpose — this is Phase 6 of
-[`.agents/roadmap/SKILL.md`](.agents/roadmap/SKILL.md), do it against your own
-deployed instance and paste real numbers here before you publish:
+```
+$ make load-up                          # prod app (localhost:8080) + internal target server
+$ go run ./cmd/loadtest -targets 500 -duration 180s
+$ make load-down
+```
 
-- [ ] Sustained checks/sec at your chosen `MAX_WORKERS`
-- [ ] p50 / p99 check latency
-- [ ] Memory footprint at N monitored targets
-- [ ] The exact command you used to produce the above (e.g. `hey`, `vegeta`,
-      or a small Go load-test script) so it's reproducible
+Load profile (see [`compose.load.yaml`](compose.load.yaml)): `MAX_WORKERS=256`,
+`CHECK_INTERVAL_SECONDS=5`, `CHECK_TIMEOUT_SECONDS=3`, `DOMAIN_RPS=500`.
+
+Output of the run (this machine, Go 1.25, 12 cores, Neon `ap-southeast-1`):
+
+```
+pulse-monitor load report
+-------------------------
+targets monitored      500
+sampling window        3m0s
+checks exercised       1004
+sustained checks/sec   5.6
+burst checks/sec       100 (min 0, avg 5.4)
+p50 check latency      11.0 ms
+p99 check latency      50.0 ms
+failed checks          0 (0.0%)
+```
+
+Reading those honestly, because a reviewer will ask:
+
+- **5.6 checks/sec sustained is a *database-write* bound, not an engine
+  bound.** The pool fans 500 requests out across 256 workers in a couple of
+  seconds — but each result is then persisted with one `INSERT` and each
+  target's stats recomputed with one aggregate query, executed *sequentially*
+  from `monitor.tick` (one store method per query, no batching — a deliberate
+  simplicity trade-off documented in `internal/store`). Against remote Neon
+  that is roughly 1000 sequential round trips per tick, and tick duration —
+  not request fan-out — is what limits checks/sec. Same stack pointed at a
+  local Postgres shifts the number sharply upward; the engine's own ceiling
+  is the 62k checks/sec micro-benchmark above.
+- **p50 11 ms / p99 50 ms** are the latencies of the checks themselves
+  against the in-network target server. Against real internet targets these
+  are shaped by the upstream's response time, not by this engine.
+- **0 failed checks** — every seeded target answered HTTP 200; this run
+  exercised the happy path end to end. Failures are recorded and streamed to
+  the dashboard the same way (see the `/metrics` failure counter).
+- **Memory at 500 targets: ≈ 16 MiB RSS** (app container, sampled with
+  `docker stats` during the run). Footprint is dominated by the in-memory
+  target list and template pool — it tracks row count, not worker count.
+
+The concurrency guarantees this whole section is built on are themselves
+tested, under the race detector, in
+[`internal/ratelimit`](internal/ratelimit) and
+[`internal/monitor`](internal/monitor) — see the Testing section below.
 
 ## Getting started
 
@@ -208,6 +247,25 @@ single-threaded happy paths — see
 [`.agents/instruction/SKILL.md`](.agents/instruction/SKILL.md) §6 for why
 that distinction is a hard requirement in this repo, not a nice-to-have.
 
+**Integration test** — boots the *real* HTTP stack (the same wiring
+`cmd/server/main.go` performs) against a real Postgres and walks the full
+path: target CRUD over HTTP (`400` bad input, `409` duplicate, `DELETE`), the
+monitor engine persisting checks into that same database, `/metrics` moving
+in lockstep, and a live `/events` SSE stream delivering a stats frame.
+
+```bash
+make test-db-up          # throwaway Postgres on :5433 (compose.test.yaml)
+make test-integration    # TEST_DATABASE_URL=… go test -race ./integration/
+make test-db-down        # stop and wipe it
+```
+
+It reads `TEST_DATABASE_URL` — deliberately *not* the production
+`DATABASE_URL` — and skips when it is unset, which is exactly how CI stays
+green without a database.
+
+**CI** — `.github/workflows/ci.yml` runs `gofmt`, `go vet ./...`, and
+`go test -race ./...` on every push and pull request.
+
 ## Deploying to Render
 
 The live instance runs at **[https://pulse-monitor-vqwz.onrender.com/](https://pulse-monitor-vqwz.onrender.com/)** — open it to explore the running dashboard without any setup.
@@ -226,6 +284,8 @@ walkthrough in the PR/chat this repo came from, or just:
 
 ```
 cmd/server/          entrypoint — wiring only, see the instruction file's §2
+cmd/targetsrv/       throwaway upstream for the Phase 6 load test (never shipped)
+cmd/loadtest/        Phase 6 load runner: seeds targets, samples /metrics, reports
 internal/config/      env-based config, the only package allowed to read env vars
 internal/ratelimit/   hand-rolled token-bucket limiter (start here)
 internal/monitor/      the worker-pool/scheduler — the concurrency core
@@ -235,9 +295,13 @@ internal/handlers/      HTTP layer + template rendering (also the SSE Publisher)
 internal/metrics/       atomic counters behind /metrics
 web/templates/           html/template files (index + OOB partials)
 web/static/               CSS (vercel-style dark theme) + the one JS file
+integration/             end-to-end test: real HTTP stack + real Postgres
 migrations/               reference copy of the schema (applied automatically at boot)
-.agents/instruction/       engineering standards — read this before touching code
-.agents/roadmap/            phased build plan (what's done, what's next)
+compose.test.yaml         dockerized Postgres for the integration test
+compose.load.yaml         load-test stack: prod app + internal target server
+.github/workflows/        CI: gofmt + go vet + go test -race ./...
+.agents/instruction/      engineering standards — read this before touching code
+.agents/roadmap/          phased build plan (what's done, what's next)
 ```
 
 ## Roadmap

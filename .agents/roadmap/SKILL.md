@@ -102,9 +102,9 @@ dropped connections mid-request.
 
 Goal: numbers and coverage you can put in the README without flinching.
 
-- [ ] Integration test spinning up the real HTTP server against a local/test Postgres
-- [ ] Full `-race` run across the whole module in CI (GitHub Actions)
-- [ ] A real load test against the deployed or local instance; record checks/sec,
+- [x] Integration test spinning up the real HTTP server against a local/test Postgres
+- [x] Full `-race` run across the whole module in CI (GitHub Actions)
+- [x] A real load test against the deployed or local instance; record checks/sec,
       p50/p99 check latency, memory footprint at N targets
 
 **Exit criteria:** CI is green with a race-detector job; the README's performance

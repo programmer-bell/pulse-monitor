@@ -8,6 +8,10 @@
 *.test
 coverage.*
 
+# go build ./cmd/<tool> with no -o drops the binary in the repo root
+/loadtest
+/targetsrv
+
 /tmp/
 
 .DS_Store
