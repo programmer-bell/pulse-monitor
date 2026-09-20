@@ -38,6 +38,24 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -o /out/server ./cmd/server
 
 # ---------------------------------------------------------
+# Target Stage — throwaway local upstream for the Phase 6 load test
+# ---------------------------------------------------------
+FROM golang:1.25-bookworm AS target-builder
+WORKDIR /app
+COPY go.mod ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -trimpath -ldflags="-s -w" \
+    -o /out/targetsrv ./cmd/targetsrv
+
+FROM gcr.io/distroless/static-debian12:nonroot AS target
+COPY --from=target-builder /out/targetsrv /targetsrv
+EXPOSE 8099
+USER nonroot:nonroot
+ENTRYPOINT ["/targetsrv"]
+
+# ---------------------------------------------------------
 # Production Stage
 # Minimal image containing only the compiled binary
 # ---------------------------------------------------------
