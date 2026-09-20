@@ -1,0 +1,35 @@
+# Phase 6 load-test stack. Brings up the prod app container pointed at the
+# real DATABASE_URL (.env -> Neon) plus an internal throwaway "target"
+# server that serves the monitored URLs, so a load run hammers a local
+# deterministic upstream instead of public sites.
+#
+#   make load-up
+#   make load            # go run ./cmd/loadtest
+#   make load-down
+#
+# The DOMAIN_RPS / MAX_WORKERS / CHECK_INTERVAL_SECONDS overrides below are
+# the load profile the README's Performance section reproduces; they trade
+# the production default cadence for a quicker, denser burn so /metrics
+# yields many samples.
+services:
+  app:
+    build:
+      context: .
+      target: prod
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      CHECK_INTERVAL_SECONDS: "5"
+      CHECK_TIMEOUT_SECONDS: "3"
+      MAX_WORKERS: "256"
+      DOMAIN_RPS: "500"
+    depends_on:
+      - target
+  target:
+    build:
+      context: .
+      target: target
+    expose:
+      - "8099"

@@ -26,6 +26,10 @@ managers. Every decision should be defensible in a code review, not just "made t
 
 ```
 cmd/server        entrypoint only — wiring, flag/env parsing, graceful shutdown
+cmd/loadtest      throwaway Phase 6 load runner (seed targets, sample /metrics, report)
+cmd/targetsrv     throwaway Phase 6 load upstream (ships only in compose.load.yaml)
+integration/      end-to-end test: real HTTP stack + real Postgres (skips unless
+                  TEST_DATABASE_URL is set)
 internal/config    env-based config struct, no globals
 internal/store      Postgres access, one method per query, no business logic
 internal/ratelimit  hand-rolled token-bucket limiter (this is a showcase piece — keep it
